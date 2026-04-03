@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design Alignment Agent — Video Storyboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #c8a96e;
+    --accent2: #7eb8a4;
+    --text: #e8e4de;
+    --muted: #888;
+    --danger: #e07a5f;
+    --info: #6fa3d0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* HEADER */
+  .header {
+    text-align: center;
+    margin-bottom: 60px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 38px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .header p {
+    color: var(--muted);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .timeline-bar {
+    margin-top: 32px;
+    display: flex;
+    gap: 4px;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .tl-seg {
+    height: 100%;
+    border-radius: 2px;
+    position: relative;
+  }
+
+  .timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* BEAT */
+  .beat {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 0;
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .beat + .beat {
+    margin-top: 24px;
+  }
+
+  .beat-time {
+    background: var(--surface2);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--border);
+    gap: 6px;
+  }
+
+  .beat-time .ts {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-align: center;
+  }
+
+  .beat-time .label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+  }
+
+  .beat-body {
+    padding: 20px 24px;
+    background: var(--surface);
+  }
+
+  .beat-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px;
+    color: var(--text);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .beat-title .tag {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .tag-demo { background: rgba(126, 184, 164, 0.15); color: var(--accent2); }
+  .tag-qa { background: rgba(200, 169, 110, 0.15); color: var(--accent); }
+  .tag-close { background: rgba(111, 163, 208, 0.15); color: var(--info); }
+  .tag-hook { background: rgba(224, 122, 95, 0.15); color: var(--danger); }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+
+  .box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .box-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .box-label.show { color: var(--accent2); }
+  .box-label.say { color: var(--accent); }
+  .box-label.graphic { color: var(--info); }
+  .box-label.overlay { color: var(--danger); }
+
+  .box p {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  .box .script {
+    font-style: italic;
+    color: #d4cfc7;
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  /* GRAPHIC BLOCKS */
+  .graphic-block {
+    background: var(--surface2);
+    border: 1px dashed var(--info);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 14px;
+  }
+
+  .graphic-block .graphic-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--info);
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  /* GRAPHIC: Gap diagram */
+  .gap-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 10px 0;
+  }
+
+  .gap-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .gap-box.left { border-color: var(--danger); color: var(--danger); }
+  .gap-box.right { border-color: var(--accent2); color: var(--accent2); }
+
+  .gap-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+  }
+
+  .gap-arrow .gap-line {
+    width: 60px;
+    height: 2px;
+    background: var(--muted);
+    position: relative;
+  }
+
+  .gap-arrow .gap-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    max-width: 80px;
+  }
+
+  /* GRAPHIC: User types */
+  .user-types {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .user-type {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .user-type .ut-icon { font-size: 22px; margin-bottom: 6px; }
+  .user-type .ut-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .user-type .ut-desc { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .user-type.designer { border-color: var(--accent2); }
+  .user-type.consumer { border-color: var(--accent); }
+
+  /* GRAPHIC: Journey */
+  .journey {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+    padding: 8px 0;
+  }
+
+  .journey-step {
+    text-align: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-width: 80px;
+  }
+
+  .journey-step .js-icon { font-size: 18px; margin-bottom: 4px; }
+  .journey-step .js-label { font-size: 11px; font-weight: 600; color: var(--text); }
+  .journey-step .js-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .journey-step.step1 { border-color: #e07a5f44; }
+  .journey-step.step2 { border-color: #c8a96e44; }
+  .journey-step.step3 { border-color: #c8a96e88; }
+  .journey-step.step4 { border-color: var(--accent2); }
+
+  .journey-arrow {
+    font-size: 18px;
+    color: var(--muted);
+    padding: 0 6px;
+  }
+
+  /* GRAPHIC: Prompt vs visual */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .comp-side {
+    border-radius: 8px;
+    padding: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .comp-side.old { border-color: var(--danger); }
+  .comp-side.new { border-color: var(--accent2); }
+
+  .comp-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .comp-label.old { color: var(--danger); }
+  .comp-label.new { color: var(--accent2); }
+
+  .comp-step {
+    font-size: 12px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    border-radius: 5px;
+    margin-bottom: 6px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .comp-step .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .old .dot { background: var(--danger); }
+  .new .dot { background: var(--accent2); }
+
+  /* GRAPHIC: Agent loop */
+  .agent-loop {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    position: relative;
+  }
+
+  .agent-node {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .agent-node .an-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .agent-node .an-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .agent-node .an-sub {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  /* OVERLAY TAG */
+  .overlay-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(224, 122, 95, 0.12);
+    border: 1px solid var(--danger);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--danger);
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 12px;
+  }
+
+  /* Q CARD */
+  .q-card {
+    background: rgba(200, 169, 110, 0.06);
+    border: 1px solid rgba(200, 169, 110, 0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+  }
+
+  .q-card .q-num {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .q-card .q-text {
+    font-family: 'DM Serif Display', serif;
+    font-size: 16px;
+    color: var(--text);
+  }
+
+  /* DIVIDER */
+  .section-divider {
+    text-align: center;
+    margin: 48px 0 32px;
+    position: relative;
+  }
+
+  .section-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .section-divider span {
+    position: relative;
+    background: var(--bg);
+    padding: 0 20px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  /* TIPS */
+  .tip {
+    background: rgba(126, 184, 164, 0.06);
+    border-left: 3px solid var(--accent2);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .tip strong { color: var(--accent2); }
+
+  /* FULL WIDTH BOX */
+  .box-full {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+
+  .note {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Design Alignment Agent</h1>
+    <p>Video Storyboard — Gemini Live Agent Challenge Submission</p>
+
+    <div class="timeline-bar">
+      <div class="tl-seg" style="width:2.5%; background:#e07a5f;"></div>
+      <div class="tl-seg" style="width:5%; background:#c8a96e;"></div>
+      <div class="tl-seg" style="width:5%; background:#c8a96e;"></div>
+      <div class="tl-seg" style="width:5%; background:#7eb8a4;"></div>
+      <div class="tl-seg" style="width:10%; background:#7eb8a4;"></div>
+      <div class="tl-seg" style="width:8%; background:#7eb8a4;"></div>
+      <div class="tl-seg" style="width:7%; background:#7eb8a4;"></div>
+      <div class="tl-seg" style="width:6%; background:#7eb8a4;"></div>
+      <div class="tl-seg" style="width:5%; background:#2e2e2e;"></div>
+      <div class="tl-seg" style="width:14%; background:#6fa3d0;"></div>
+      <div class="tl-seg" style="width:13%; background:#6fa3d0;"></div>
+      <div class="tl-seg" style="width:13%; background:#6fa3d0;"></div>
+      <div class="tl-seg" style="width:7%; background:#888;"></div>
+    </div>
+    <div class="timeline-labels">
+      <span>0:00</span>
+      <span>1:00</span>
+      <span>2:00</span>
+      <span>3:00</span>
+      <span>3:45</span>
+    </div>
+  </div>
+
+  <!-- ===================== PART 1: DEMO ===================== -->
+  <div class="section-divider"><span>Part 1 — Demo Walk-Through</span></div>
+
+  <!-- BEAT 1 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">0:00<br>–<br>0:08</div>
+      <div class="label">Title Card</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Opening Hook
+        <span class="tag tag-hook">Hook</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Title card graphic:<br><br>
+          <strong>Design Alignment Agent</strong><br>
+          <em>Explore → Compare → Refine → Converge</em></p>
+          <p class="note">Make this in Canva or Keynote. Dark background, clean white text. 8 seconds.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"Most people cannot describe their design taste — but they can recognise it when they see it."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 2 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">0:08<br>–<br>0:30</div>
+      <div class="label">Context</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        The Problem
+        <span class="tag tag-hook">Hook</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Style selection UI — just loaded, not clicked yet. Slow zoom in so judges can see all 10 styles clearly.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"I work across visual storytelling and creative AI. One problem I see constantly — people struggle to articulate aesthetic preferences. Design Alignment Agent explores a different interaction model: instead of asking users to write prompts, the system learns from visual reactions."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 3: WHY INTERIOR DESIGN -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">0:30<br>–<br>0:55</div>
+      <div class="label">Why This Domain</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Why Interior Design?
+        <span class="tag tag-hook">Hook</span>
+      </div>
+      <div class="box-full">
+        <div class="box-label say">🎙️ You say</div>
+        <p class="script">"Interior design is the perfect test case. The majority of people renovating or decorating their homes are not designers. They can't say 'I want Japandi with warm undertones and a low contrast palette.' But they absolutely know what feels right when they see it. There's a massive gap between visual intuition and design language — and that gap is expensive. This agent bridges it."</p>
+      </div>
+
+      <!-- GRAPHIC: Gap diagram -->
+      <div class="graphic-block">
+        <div class="graphic-title">📊 Graphic to show on screen (make in Canva — 10 min)</div>
+        <div class="gap-diagram">
+          <div class="gap-box left">
+            👤 Consumer<br>
+            <small style="font-size:11px; font-weight:400;">"I want something cozy<br>but modern..."</small>
+          </div>
+          <div class="gap-arrow">
+            <div style="display:flex; align-items:center; gap:0;">
+              <div class="gap-line"></div>
+              <span style="color:var(--muted); font-size:18px;">✕</span>
+              <div class="gap-line"></div>
+            </div>
+            <div class="gap-label">vocabulary<br>gap</div>
+          </div>
+          <div class="gap-box right">
+            🏠 Designer<br>
+            <small style="font-size:11px; font-weight:400;">"Japandi? Scandi?<br>Mid-Century?"</small>
+          </div>
+        </div>
+        <div style="text-align:center; margin-top:16px; color: var(--accent); font-size:13px; font-weight:500;">↓ Design Alignment Agent fills this gap ↓</div>
+        <div class="tip"><strong>Tip:</strong> This is a simple two-box diagram. Takes 5 minutes in Canva. Just two rectangles with an X between them. Put the agent name below as a bridge.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 4: Style Selection -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">0:55<br>–<br>1:20</div>
+      <div class="label">Phase 1</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Style Selection + Commentary
+        <span class="tag tag-demo">Demo</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Hover over 2–3 styles slowly so judges can see the images. Then click <strong>Japandi</strong>. Wait for style commentary to appear. Scroll through it slowly.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The interaction begins with style discovery. All ten styles use the same room — same camera, same light, same layout. Only the aesthetic language changes. The user picks what resonates."</p>
+          <br>
+          <p class="script">"Gemini immediately interprets that choice. Not just a label — a full design language breakdown. Vibe, key rules, what to avoid, and what to explore next. The agent is reasoning before it renders anything."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 5: Round 1 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">1:20<br>–<br>1:55</div>
+      <div class="label">Phase 2</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Round 1 — Direction Exploration
+        <span class="tag tag-demo">Demo</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Show the 3 cards loading. Add <strong>"⚡ Sped up 4x"</strong> text overlay while they generate. Once all 3 are loaded, <strong>pause for 3 seconds</strong> so judges can see all three side by side. Then click one.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The agent generates three directions. Layout and camera stay fixed across all of them — users are evaluating aesthetic differences, not architectural ones. Every card is directly comparable."</p>
+          <br>
+          <p class="script">"I select this one."</p>
+        </div>
+      </div>
+      <div class="overlay-tag">⚡ Add text overlay: "Sped up 4x — generation takes ~60s in real time"</div>
+      <div class="box" style="margin-top:14px;">
+        <div class="box-label overlay">💬 Screen text overlay after clicking</div>
+        <p style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent2);">Updating session state in Firestore...<br>Selected option becomes Round 2 anchor</p>
+        <p class="note">Add this as a lower-third text overlay in your video editor. Makes the statefulness visible to judges.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 6: Round 2 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">1:55<br>–<br>2:20</div>
+      <div class="label">Phase 3</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Round 2 — Taste Refinement
+        <span class="tag tag-demo">Demo</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Round 2 cards loading — <strong>"⚡ Sped up 4x"</strong> overlay again. Once loaded, show all 3 cards. Click one. Let the final brief load.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The second round refines the selected direction — material tonality, wood finishes, textiles, palette shifts. The room stays identical. Only the aesthetic language changes. This is a deliberate design decision: users aren't distracted by layout, they're purely comparing taste."</p>
+          <br>
+          <p class="script">"This demo runs two rounds — a deliberate MVP decision to keep the experience fast. But the alignment loop is designed to extend across as many rounds as needed until the user genuinely converges."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEAT 7: Final Brief -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">2:20<br>–<br>2:35</div>
+      <div class="label">Output</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Final Brief
+        <span class="tag tag-demo">Demo</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Scroll slowly through the final brief — show the <strong>title</strong>, <strong>5 design rules</strong>, and <strong>axis scores</strong> clearly. Take your time here.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The output is a structured design brief. A title, five actionable design rules, and preference scores across five axes. This is something you could hand directly to an interior designer and skip three rounds of revision."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PART 2: Q&A ===================== -->
+  <div class="section-divider"><span>Part 2 — Key Questions</span></div>
+
+  <!-- TRANSITION -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">2:35<br>–<br>2:40</div>
+      <div class="label">Transition</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">Transition Card</div>
+      <div class="box">
+        <div class="box-label show">🖥️ Show on screen</div>
+        <p>Simple title card: <strong>"Key Questions"</strong> — same style as opening card. 5 seconds.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Q1 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">2:40<br>–<br>3:00</div>
+      <div class="label">Q1</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Agent vs Generator
+        <span class="tag tag-qa">Q&A</span>
+      </div>
+      <div class="q-card">
+        <div class="q-num">Question 1 — on screen as text</div>
+        <div class="q-text">"Why is this an agent and not just an image generator?"</div>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Architecture diagram. Slowly pan or zoom across it so judges can read the layers.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The system maintains session state, interprets selections as preference signals, plans design directions before rendering, and synthesises a full brief from the complete interaction history. Gemini is called 7 times per session — separating reasoning from rendering. That stateful loop is what makes this an agent."</p>
+        </div>
+      </div>
+
+      <!-- GRAPHIC: Agent loop -->
+      <div class="graphic-block">
+        <div class="graphic-title">📊 Optional overlay graphic — 6 agent calls shown as a loop</div>
+        <div class="agent-loop">
+          <div class="agent-node">
+            <div class="an-num">1</div>
+            <div class="an-label">Style Commentary</div>
+            <div class="an-sub">Gemini reasons about chosen style</div>
+          </div>
+          <div class="agent-node">
+            <div class="an-num">2</div>
+            <div class="an-label">Direction Planner</div>
+            <div class="an-sub">Gemini plans B + C specs (11 fields)</div>
+          </div>
+          <div class="agent-node">
+            <div class="an-num">3–4</div>
+            <div class="an-label">Round 1 Render</div>
+            <div class="an-sub">Imagen 3 renders B then C</div>
+          </div>
+          <div class="agent-node">
+            <div class="an-num">5–6</div>
+            <div class="an-label">Round 2 Render</div>
+            <div class="an-sub">Imagen 3 cool + dark variants</div>
+          </div>
+          <div class="agent-node">
+            <div class="an-num">7</div>
+            <div class="an-label">Final Brief</div>
+            <div class="an-sub">Gemini synthesises full journey</div>
+          </div>
+          <div class="agent-node" style="border-color:var(--accent); background:rgba(200,169,110,0.06);">
+            <div class="an-num" style="font-size:14px;">🧠</div>
+            <div class="an-label">Firestore</div>
+            <div class="an-sub">State persists across every step</div>
+          </div>
+        </div>
+        <div class="tip"><strong>Tip:</strong> You can screenshot this graphic directly from this document and use it as an overlay in your video editor.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Q2 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">3:00<br>–<br>3:18</div>
+      <div class="label">Q2</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Multimodal Interaction
+        <span class="tag tag-qa">Q&A</span>
+      </div>
+      <div class="q-card">
+        <div class="q-num">Question 2 — on screen as text</div>
+        <div class="q-text">"How is the interaction multimodal?"</div>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Go back to Round 1 in the demo recording. Show the moment when <strong>all 3 cards are visible</strong> side by side — options A, B, C. Pause here. This is the key visual.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"Users never type a description. They communicate entirely through visual reactions. The agent receives an image selection as input and produces new images as output. Text only appears in the design brief — everything else is visual. That's the multimodal loop."</p>
+        </div>
+      </div>
+
+      <!-- GRAPHIC: Prompt vs visual -->
+      <div class="graphic-block">
+        <div class="graphic-title">📊 Graphic — Traditional prompting vs this system</div>
+        <div class="comparison">
+          <div class="comp-side old">
+            <div class="comp-label old">❌ Traditional tool</div>
+            <div class="comp-step"><div class="dot"></div>User types a prompt</div>
+            <div class="comp-step"><div class="dot"></div>Image generates</div>
+            <div class="comp-step"><div class="dot"></div>User types again</div>
+            <div class="comp-step"><div class="dot"></div>Repeat forever</div>
+          </div>
+          <div class="comp-side new">
+            <div class="comp-label new">✓ Design Alignment Agent</div>
+            <div class="comp-step"><div class="dot"></div>User reacts to images</div>
+            <div class="comp-step"><div class="dot"></div>Agent interprets selection</div>
+            <div class="comp-step"><div class="dot"></div>State updates in Firestore</div>
+            <div class="comp-step"><div class="dot"></div>Design space narrows</div>
+          </div>
+        </div>
+        <div class="tip"><strong>Tip:</strong> Screenshot this and use as an overlay. Simple, readable, makes the point clearly.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Q3 -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">3:18<br>–<br>3:38</div>
+      <div class="label">Q3</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Creative Storytelling
+        <span class="tag tag-qa">Q&A</span>
+      </div>
+      <div class="q-card">
+        <div class="q-num">Question 3 — on screen as text</div>
+        <div class="q-text">"Why is this a creative storytelling project?"</div>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Show the taste evolution graphic below while you speak. Then cut to the final brief at the end of the sentence.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"The story is the evolution of the user's taste. From vague intuition — through exploration, through refinement — to a clearly defined aesthetic identity. The final design brief is the conclusion of that story. A record of how preferences emerged through guided exploration."</p>
+        </div>
+      </div>
+
+      <!-- GRAPHIC: Taste Journey -->
+      <div class="graphic-block">
+        <div class="graphic-title">📊 Graphic — Taste evolution arc (show on screen while speaking)</div>
+        <div class="journey">
+          <div class="journey-step step1">
+            <div class="js-icon">🌫️</div>
+            <div class="js-label">Uncertain</div>
+            <div class="js-sub">"Something cozy<br>but modern..."</div>
+          </div>
+          <div class="journey-arrow">→</div>
+          <div class="journey-step step2">
+            <div class="js-icon">🔍</div>
+            <div class="js-label">Explore</div>
+            <div class="js-sub">Style selection<br>Round 1</div>
+          </div>
+          <div class="journey-arrow">→</div>
+          <div class="journey-step step3">
+            <div class="js-icon">🎯</div>
+            <div class="js-label">Refine</div>
+            <div class="js-sub">Material &amp;<br>palette Round 2</div>
+          </div>
+          <div class="journey-arrow">→</div>
+          <div class="journey-step step4">
+            <div class="js-icon">✨</div>
+            <div class="js-label">Identity</div>
+            <div class="js-sub">Final brief +<br>5 design rules</div>
+          </div>
+        </div>
+        <div class="tip"><strong>Tip:</strong> Screenshot this graphic. It's your answer to "why is this storytelling?" in one image.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLOSING -->
+  <div class="beat">
+    <div class="beat-time">
+      <div class="ts">3:38<br>–<br>3:45</div>
+      <div class="label">Close</div>
+    </div>
+    <div class="beat-body">
+      <div class="beat-title">
+        Closing + GCP Proof
+        <span class="tag tag-close">Close</span>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-label show">🖥️ Show on screen</div>
+          <p>Quickly switch to <strong>GCP Cloud Run console</strong> showing your service is live. 5–8 seconds is enough. This also counts as your deployment proof.</p>
+        </div>
+        <div class="box">
+          <div class="box-label say">🎙️ You say</div>
+          <p class="script">"Running on Google Cloud Run, Firestore, Gemini 2.5 Flash, and Imagen 3. The MVP is living rooms. The framework scales to branding, architecture, any creative domain where aesthetic intent needs to be aligned before execution begins."</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER NOTES -->
+  <div class="section-divider"><span>Editing Notes</span></div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top: 8px;">
+    <div class="box">
+      <div class="box-label">Speed-up overlays</div>
+      <p>Add <strong style="color:var(--danger);">"⚡ Sped up 4x"</strong> text overlay during both image generation sequences. This is transparent and expected — generation takes ~60s in real time. Judges appreciate honesty.</p>
+    </div>
+    <div class="box">
+      <div class="box-label">Graphics to make</div>
+      <p>4 graphics needed — all in this doc, screenshot them:<br><br>
+      ① Gap diagram (consumer ✕ designer)<br>
+      ② 6-call agent loop grid<br>
+      ③ Traditional vs this system comparison<br>
+      ④ Taste evolution journey arc</p>
+    </div>
+    <div class="box">
+      <div class="box-label">Confidence tip on 2-round MVP</div>
+      <p>Don't apologise for 2 rounds. Say: <em>"Two rounds by design — the loop is built to extend, but the MVP keeps the experience fast."</em> Intentional > apologetic.</p>
+    </div>
+    <div class="box">
+      <div class="box-label">Deployment proof</div>
+      <p>The GCP console at 3:38 covers your deployment proof requirement. Alternatively, link to <code style="font-size:11px; color:var(--accent2);">backend/main.py</code> in your Devpost form — it shows Firestore + Vertex AI imports clearly.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

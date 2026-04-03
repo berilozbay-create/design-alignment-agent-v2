@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from google.cloud import firestore
 
 from design_direction_planner import plan_stage2_directions
@@ -399,6 +400,24 @@ def build_refinement_option(base_option: dict, new_id: str, mode: str) -> dict:
     return option
 
 
+def _generate_option_image(option, gemini_client, session_id, round_number, prompt_fn, direction_image_url=None):
+    option_id = option["id"]
+    print(f"[start_round] image generation start for {option_id}")
+    image_prompt = prompt_fn(option)
+    image_url = generate_image_with_gemini(
+        gemini_client=gemini_client,
+        session_id=session_id,
+        round_number=round_number,
+        option_id=option_id,
+        prompt=image_prompt,
+        style_image_path=None,
+        direction_image_url=direction_image_url,
+    )
+    print(f"[start_round] image generation done for {option_id}: {image_url}")
+    option["image_url"] = image_url
+    return option
+
+
 def start_round(session_id: str, round_number: int, db, gemini_client):
     print(f"[start_round] session_id={session_id} round_number={round_number}")
 
@@ -445,26 +464,15 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
         options = [build_direction_a_option(selected_style)]
         print("[start_round] direction A added")
 
-        for planned in planned_options:
-            option = normalize_stage_option(planned)
-            option_id = option["id"]
+        options_to_generate = [normalize_stage_option(planned) for planned in planned_options]
 
-            print(f"[start_round] image generation start for {option_id}")
-            image_prompt = build_stage2_image_prompt(option)
-
-            image_url = generate_image_with_gemini(
-                gemini_client=gemini_client,
-                session_id=session_id,
-                round_number=1,
-                option_id=option_id,
-                prompt=image_prompt,
-                style_image_path=None,
-                direction_image_url=None,
-            )
-
-            print(f"[start_round] image generation done for {option_id}: {image_url}")
-            option["image_url"] = image_url
-            options.append(option)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(_generate_option_image, opt, gemini_client, session_id, 1, build_stage2_image_prompt)
+                for opt in options_to_generate
+            ]
+            for future in futures:
+                options.append(future.result())
 
         options = sorted(options, key=lambda x: x.get("id", ""))
         print("[start_round] round 1 options sorted")
@@ -491,25 +499,13 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
         option_b = build_refinement_option(selected_option, "B", "cool")
         option_c = build_refinement_option(selected_option, "C", "dark")
 
-        for option in [option_b, option_c]:
-            option_id = option["id"]
-            print(f"[start_round] refinement image generation start for {option_id}")
-
-            image_prompt = build_stage3_image_prompt(option)
-
-            image_url = generate_image_with_gemini(
-                gemini_client=gemini_client,
-                session_id=session_id,
-                round_number=2,
-                option_id=option_id,
-                prompt=image_prompt,
-                style_image_path=None,
-                direction_image_url=anchor_image_url,
-            )
-
-            print(f"[start_round] refinement image generation done for {option_id}: {image_url}")
-            option["image_url"] = image_url
-            options.append(option)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(_generate_option_image, opt, gemini_client, session_id, 2, build_stage3_image_prompt, anchor_image_url)
+                for opt in [option_b, option_c]
+            ]
+            for future in futures:
+                options.append(future.result())
 
         options = sorted(options, key=lambda x: x.get("id", ""))
         print("[start_round] round 2 options sorted")

@@ -11,3 +11,10 @@ Thumbs.db
 *.log
 dist/
 build/
+*_BACKUP*
+*_back_up*
+*_before_*
+backend/static/generated/
+backend/dict
+backend/str
+backend/test_*.py
