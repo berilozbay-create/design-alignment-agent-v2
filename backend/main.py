@@ -474,6 +474,19 @@ def demo_page():
             z-index: 2;
         }
 
+        .option-letter-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #f5f0e8;
+            font-weight: bold;
+            font-size: 13px;
+            padding: 4px 9px;
+            border-radius: 6px;
+            z-index: 10;
+        }
+
         .card-media {
             aspect-ratio: 16 / 10;
             background: #e9e5db;
@@ -490,6 +503,11 @@ def demo_page():
             height: 100%;
             object-fit: cover;
             display: block;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
         }
 
         .card-body {
@@ -743,7 +761,7 @@ def demo_page():
             <div class="same-room-note">Same room. Same lighting. Same camera. Focus only on style.</div>
 
             <div class="loader hidden" id="loader-stage-2">
-                <div class="loader-title">Design Mediator is preparing three direction cards within this style…</div>
+                <div class="loader-title">Design Mediator is preparing six direction cards across both styles…</div>
                 <div class="progress-row">
                     <div class="progress-seg" id="s2p1"></div>
                     <div class="progress-seg" id="s2p2"></div>
@@ -884,7 +902,8 @@ def demo_page():
         };
 
         let sessionId = null;
-        let selectedStyle = null;
+        let selectedStylePrimary = null;
+        let selectedStyleSecondary = null;
         let round1Data = null;
         let round2Data = null;
         let selectedRound1Id = null;
@@ -920,7 +939,8 @@ def demo_page():
 
         function restartDemo() {
             sessionId = null;
-            selectedStyle = null;
+            selectedStylePrimary = null;
+            selectedStyleSecondary = null;
             round1Data = null;
             round2Data = null;
             selectedRound1Id = null;
@@ -930,7 +950,7 @@ def demo_page():
             round2Locked = false;
             finalHeroUrl = null;
 
-            document.getElementById("styleStatus").textContent = "Choose one style to begin.";
+            document.getElementById("styleStatus").textContent = "Choose your primary style to begin.";
             document.getElementById("round1Grid").innerHTML = "";
             document.getElementById("round2Grid").innerHTML = "";
             document.getElementById("round1Raw").textContent = "";
@@ -1016,10 +1036,13 @@ def demo_page():
             STYLE_NAMES.forEach(style => {
                 const card = document.createElement("div");
 
+                const isPrimary = style === selectedStylePrimary;
+                const isSecondary = style === selectedStyleSecondary;
+
                 let className = "card";
-                if (selectedStyle === style) className += " selected";
+                if (isPrimary || isSecondary) className += " selected";
                 if (styleLocked) className += " locked";
-                if (styleLocked && selectedStyle !== style) className += " dimmed";
+                if (styleLocked && !isPrimary && !isSecondary) className += " dimmed";
                 card.className = className;
 
                 if (!styleLocked) {
@@ -1031,9 +1054,9 @@ def demo_page():
                     ? `<img src="${imgSrc}" alt="${style}">`
                     : `<div>${style}</div>`;
 
-                const badgeHtml = selectedStyle === style && styleLocked
-                    ? `<div class="selected-badge">Selected</div>`
-                    : "";
+                let badgeHtml = "";
+                if (isPrimary) badgeHtml = `<div class="selected-badge">PRIMARY</div>`;
+                else if (isSecondary) badgeHtml = `<div class="selected-badge">SECONDARY</div>`;
 
                 card.innerHTML = `
                     ${badgeHtml}
@@ -1060,14 +1083,47 @@ def demo_page():
         async function selectStyleCard(style) {
             if (styleLocked) return;
 
-            try {
-                selectedStyle = style;
-                styleLocked = true;
+            if (!selectedStylePrimary) {
+                selectedStylePrimary = style;
+                document.getElementById("styleStatus").textContent = "Primary style selected. Now choose a secondary style.";
                 renderStyleGrid();
+                return;
+            }
 
+            if (style === selectedStylePrimary) return;
+
+            selectedStyleSecondary = style;
+            styleLocked = true;
+            renderStyleGrid();
+
+            // Show stage-2 and placeholder grid immediately
+            showStage("stage-2");
+            setTracker(2);
+            (function() {
+                const _grid = document.getElementById("round1Grid");
+                _grid.innerHTML = "";
+                document.getElementById("loader-stage-2").classList.remove("hidden");
+                setProgress("s2p", 0, 6, "Kicking off generation…");
+                for (const _id of ["A", "B", "C", "D", "E", "F"]) {
+                    const _c = document.createElement("div");
+                    _c.className = "card";
+                    _c.id = `r1card-${_id}`;
+                    _c.innerHTML = `
+                        <div class="option-letter-badge">${_id}</div>
+                        <div class="card-media" style="animation:pulse 1.5s ease-in-out infinite;"></div>
+                        <div class="card-body">
+                            <div class="card-title">Option ${_id}</div>
+                            <div class="card-text">Designing…</div>
+                        </div>
+                    `;
+                    _grid.appendChild(_c);
+                }
+            })();
+
+            try {
                 document.getElementById("styleStatus").textContent = "";
-                document.getElementById("styleTransitionTitle").textContent = `Style selected: ${style}`;
-                document.getElementById("styleTransitionText").textContent = "Design Mediator is now exploring directions within this style…";
+                document.getElementById("styleTransitionTitle").textContent = `Styles selected: ${selectedStylePrimary} & ${selectedStyleSecondary}`;
+                document.getElementById("styleTransitionText").textContent = "Design Mediator is now exploring directions within these styles…";
                 document.getElementById("styleTransition").classList.add("show");
 
                 await ensureSession();
@@ -1075,7 +1131,7 @@ def demo_page():
                 const res = await fetch(`/session/${sessionId}/select-style`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ styles: [style] })
+                    body: JSON.stringify({ styles: [selectedStylePrimary, selectedStyleSecondary] })
                 });
 
                 const data = await res.json();
@@ -1083,21 +1139,27 @@ def demo_page():
                 if (data.error) {
                     document.getElementById("styleStatus").textContent = "Error selecting style: " + JSON.stringify(data, null, 2);
                     styleLocked = false;
+                    selectedStyleSecondary = null;
                     renderStyleGrid();
                     return;
                 }
 
-                showStage("stage-2");
-                setTracker(2);
                 await generateRound1();
             } catch (err) {
                 document.getElementById("styleStatus").textContent = "Error selecting style: " + err;
                 styleLocked = false;
+                selectedStyleSecondary = null;
                 renderStyleGrid();
             }
         }
 
         async function generateRound1() {
+            fetch(`/session/${sessionId}/round/start`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ round: 1 })
+            });
+
             const loader = document.getElementById("loader-stage-2");
             const grid = document.getElementById("round1Grid");
             const raw = document.getElementById("round1Raw");
@@ -1105,35 +1167,92 @@ def demo_page():
             grid.innerHTML = "";
             raw.textContent = "";
             loader.classList.remove("hidden");
+            setProgress("s2p", 0, 6, "Kicking off generation\u2026");
 
-            setProgress("s2p", 0, 3, "Preparing design directions…");
-            await sleep(250);
+            function fillCard(id, option) {
+                const card = document.getElementById(`r1card-${id}`);
+                if (!card) return;
+                const imageUrl = extractImageUrl(option) || "";
+                const title = safeText(option.title || option.style_name, `Option ${id}`);
+                const desc = safeText(option.commentary || option.direction || option.description, "");
+                card.innerHTML = `
+                    <div class="option-letter-badge">${id}</div>
+                    <div class="card-media">
+                        <img src="${imageUrl}" alt="${title}" style="opacity:0;transition:opacity 0.6s;" onload="this.style.opacity=1">
+                    </div>
+                    <div class="card-body">
+                        <div class="card-title">${title}</div>
+                        <div class="card-text">${desc}</div>
+                    </div>
+                `;
+                card.style.opacity = "0";
+                card.style.transition = "opacity 0.4s ease";
+                requestAnimationFrame(() => requestAnimationFrame(() => { card.style.opacity = "1"; }));
+            }
+
+            const ALL_IDS = ["A", "B", "C", "D", "E", "F"];
+            for (const id of ALL_IDS) {
+                const card = document.createElement("div");
+                card.className = "card";
+                card.id = `r1card-${id}`;
+                card.innerHTML = `
+                    <div class="option-letter-badge">${id}</div>
+                    <div class="card-media" style="animation:pulse 1.5s ease-in-out infinite;"></div>
+                    <div class="card-body">
+                        <div class="card-title">Option ${id}</div>
+                        <div class="card-text">Designing\u2026</div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            }
+
 
             try {
-                setProgress("s2p", 1, 3, "Building selected direction and generating option B…");
+                await sleep(5000);
+                const optionA = { id: "A", title: selectedStylePrimary, style_name: selectedStylePrimary, image_url: STYLE_IMAGE_MAP[selectedStylePrimary] || "", commentary: STYLE_BLURBS[selectedStylePrimary] || "" };
+                fillCard("A", optionA);
+                setProgress("s2p", 1, 6, "Option A ready\u2026");
 
-                const res = await fetch(`/session/${sessionId}/round/start`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ round: 1 })
+                await sleep(25000);
+                const optionD = { id: "D", title: selectedStyleSecondary, style_name: selectedStyleSecondary, image_url: STYLE_IMAGE_MAP[selectedStyleSecondary] || "", commentary: STYLE_BLURBS[selectedStyleSecondary] || "" };
+                fillCard("D", optionD);
+                setProgress("s2p", 2, 6, "Option D ready\u2026");
+
+                const filled = { A: optionA, D: optionD };
+                let filledCount = 2;
+
+                await new Promise((resolve, reject) => {
+                    let pollCount = 0;
+                    let polling = false;
+                    const intervalId = setInterval(async () => {
+                        if (polling) return; polling = true;
+                        if (++pollCount > 75) { polling = false; clearInterval(intervalId); reject(new Error("Polling timed out")); return; }
+                        try {
+                            const res = await fetch(`/session/${sessionId}/round/poll`);
+                            const data = await res.json();
+                            if (data.error) { polling = false; return; }
+                            for (const option of (data.options || [])) {
+                                const oid = option.id;
+                                if (filled[oid] || !option.image_url) continue;
+                                filled[oid] = option;
+                                fillCard(oid, option);
+                                setProgress("s2p", ++filledCount, 6, `Option ${oid} ready\u2026`);
+                            }
+                            if (data.complete && filledCount >= 6) { clearInterval(intervalId); resolve(filled); }
+                        } catch (e) { /* keep polling */ } finally { polling = false; }
+                    }, 8000);
                 });
 
-                setProgress("s2p", 2, 3, "Generating option C…");
-                await sleep(250);
-                setProgress("s2p", 3, 3, "Finalizing three direction cards…");
-
-                const data = await res.json();
-                round1Data = data;
-                raw.textContent = JSON.stringify(data, null, 2);
-
-                renderRoundGrid("round1Grid", data, 1);
+                round1Data = { session_id: sessionId, phase: 3, round: 1, options: ALL_IDS.map(id => filled[id]).filter(Boolean) };
+                raw.textContent = JSON.stringify(round1Data, null, 2);
+                setProgress("s2p", 6, 6, "All directions ready.");
+                renderRoundGrid("round1Grid", round1Data, 1);
             } catch (err) {
-                grid.innerHTML = `<div class="brief-box">Error generating Stage 2 directions: ${safeText(err)}</div>`;
+                grid.innerHTML = `<div class="brief-box">Error generating directions: ${safeText(err)}</div>`;
             } finally {
                 loader.classList.add("hidden");
             }
         }
-
         async function generateRound2() {
             const loader = document.getElementById("loader-stage-3");
             const grid = document.getElementById("round2Grid");
@@ -1213,6 +1332,7 @@ def demo_page():
                     : "";
 
                 card.innerHTML = `
+                    <div class="option-letter-badge">${optionId}</div>
                     ${badgeHtml}
                     <div class="card-media">${mediaHtml}</div>
                     <div class="card-body">
@@ -1535,6 +1655,39 @@ def round_start(session_id: str, payload: RoundStartRequest):
     except Exception as e:
         return {
             "error": "round_generation_failed",
+            "error_type": type(e).__name__,
+            "detail": str(e)
+        }
+
+
+@app.get("/session/{session_id}/round/poll")
+def round_poll(session_id: str):
+    try:
+        doc_ref = db.collection("sessions").document(session_id)
+        snap = doc_ref.get()
+
+        if not snap.exists:
+            return {"error": "Session not found"}
+
+        session = snap.to_dict() or {}
+        current_round = session.get("current_round", 1)
+        rounds = session.get("rounds", {})
+        round_data = rounds.get(str(current_round), {})
+        options = round_data.get("options", [])
+        complete = len(options) >= 6 and all(
+            any(o.get("id") == oid for o in options)
+            for oid in ("A", "B", "C", "D", "E", "F")
+        )
+
+        return {
+            "round": current_round,
+            "options": options,
+            "complete": complete,
+        }
+
+    except Exception as e:
+        return {
+            "error": "poll_failed",
             "error_type": type(e).__name__,
             "detail": str(e)
         }

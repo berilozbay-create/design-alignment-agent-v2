@@ -33,31 +33,32 @@ def _parse_json_response(raw_text: str) -> dict:
         raise ValueError(f"Gemini did not return valid JSON. Raw output:\n{cleaned}")
 
 
-def build_stage2_planner_prompt(selected_style: str, style_commentary_text: str) -> str:
+def build_stage2_planner_prompt(primary_style: str, secondary_style: str, style_commentary_text: str) -> str:
     return f"""
 Role:
 You are a Senior Interior Design Director.
 
 Task:
-Create 2 distinct, high-end design directions for the selected style.
+Create 4 distinct, high-end design directions based on a primary style and a secondary style.
 
-Selected style:
-{selected_style}
+Primary style:
+{primary_style}
+
+Secondary style:
+{secondary_style}
 
 Style commentary:
 {style_commentary_text}
 
-Important:
-These two directions must remain clearly within the selected style family.
-Distinctness should come from:
-- materiality
-- palette
-- decor density
-- furniture silhouette
+Direction briefs:
+- B: Stay entirely within {primary_style}. Same aesthetic soul, but choose a distinctly different expression — different colour palette, different material character, different furniture objects. Do not introduce any influence from {secondary_style}.
+- C: Lead strongly with {primary_style} — approximately 70% of the design language should feel like {primary_style}. Introduce {secondary_style} influence through one or two specific elements only: for example the colour palette, a textile choice, or a lighting character. The room should read as {primary_style} first.
+- E: Stay entirely within {secondary_style}. Same aesthetic soul, but choose a distinctly different expression — different colour palette, different material character, different furniture objects. Do not introduce any influence from {primary_style}.
+- F: Lead strongly with {secondary_style} — approximately 70% of the design language should feel like {secondary_style}. Introduce {primary_style} influence through one or two specific elements only. The room should read as {secondary_style} first.
 
 Do not drift into unrelated styles.
 
-Output exactly 2 options with ids B and C.
+Output exactly 4 options with ids B, C, E, F.
 
 Every option must include all fields.
 Do not omit commentary.
@@ -94,6 +95,34 @@ Return valid JSON only in this exact format:
       "botanical_species": "...",
       "lighting_character": "...",
       "commentary": "..."
+    }},
+    {{
+      "id": "E",
+      "style_name": "...",
+      "direction_summary": "...",
+      "color_story": "...",
+      "wall_material": "...",
+      "floor_material": "...",
+      "furniture_silhouette": "...",
+      "furniture_finishes": "...",
+      "decor_density": "...",
+      "botanical_species": "...",
+      "lighting_character": "...",
+      "commentary": "..."
+    }},
+    {{
+      "id": "F",
+      "style_name": "...",
+      "direction_summary": "...",
+      "color_story": "...",
+      "wall_material": "...",
+      "floor_material": "...",
+      "furniture_silhouette": "...",
+      "furniture_finishes": "...",
+      "decor_density": "...",
+      "botanical_species": "...",
+      "lighting_character": "...",
+      "commentary": "..."
     }}
   ]
 }}
@@ -119,13 +148,15 @@ def _normalize_option(option: dict) -> dict:
 
 def plan_stage2_directions(
     gemini_client,
-    selected_style: str,
+    primary_style: str,
+    secondary_style: str,
     style_commentary: dict,
 ):
     style_commentary_text = style_commentary.get("raw_text", "") if isinstance(style_commentary, dict) else ""
 
     prompt = build_stage2_planner_prompt(
-        selected_style=selected_style,
+        primary_style=primary_style,
+        secondary_style=secondary_style,
         style_commentary_text=style_commentary_text,
     )
 
@@ -138,10 +169,10 @@ def plan_stage2_directions(
     parsed = _parse_json_response(raw_text)
 
     options = parsed.get("options", [])
-    if not isinstance(options, list) or len(options) != 2:
-        raise ValueError("Stage 2 planner must return exactly 2 options")
+    if not isinstance(options, list) or len(options) != 4:
+        raise ValueError("Stage 2 planner must return exactly 4 options")
 
-    expected_ids = {"B", "C"}
+    expected_ids = {"B", "C", "E", "F"}
     seen_ids = set()
     normalized_options = []
 
@@ -159,7 +190,7 @@ def plan_stage2_directions(
         normalized_options.append(normalized)
 
     if seen_ids != expected_ids:
-        raise ValueError(f"Planner must return ids B and C exactly. Got: {seen_ids}")
+        raise ValueError(f"Planner must return ids B, C, E and F exactly. Got: {seen_ids}")
 
     return {
         "options": normalized_options

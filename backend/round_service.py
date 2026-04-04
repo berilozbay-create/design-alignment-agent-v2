@@ -394,6 +394,22 @@ def build_refinement_option(base_option: dict, new_id: str, mode: str) -> dict:
             "This refinement preserves the same design direction while exploring a darker and more atmospheric material palette."
         )
 
+    elif mode == "warm":
+        option["title"] = f"{base_title} — Warm Material Edit"
+        option["style_name"] = option["title"]
+        option["direction_summary"] = (
+            f"{base_option.get('direction_summary', '')} "
+            "Keep the exact same room and furniture, but shift the design toward warmer woods, richer textiles, and a golden ambient light."
+        )
+        option["color_story"] = "Warm honey oak, amber, terracotta, soft cream"
+        option["wall_material"] = "Warm plaster or softly tinted matte paint"
+        option["floor_material"] = "Honey oak or warm-toned timber"
+        option["furniture_finishes"] = "Warm woven textiles, honey wood, soft terracotta accents"
+        option["lighting_character"] = "Warm golden ambient light with a soft, inviting glow"
+        option["commentary"] = (
+            "This refinement shifts the room into a warmer, more inviting material mood while preserving the same design composition."
+        )
+
     else:
         raise ValueError(f"Unsupported refinement mode: {mode}")
 
@@ -443,37 +459,42 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
         if not style_selected or not isinstance(style_selected, list):
             raise ValueError("style_selected not found in session")
 
-        selected_style = style_selected[0]
-        print(f"[start_round] selected_style={selected_style}")
+        primary_style = style_selected[0]
+        secondary_style = style_selected[1] if len(style_selected) > 1 else primary_style
+        print(f"[start_round] primary_style={primary_style} secondary_style={secondary_style}")
         print("[start_round] entering round 1 flow")
 
         planner_result = plan_stage2_directions(
             gemini_client=gemini_client,
-            selected_style=selected_style,
+            primary_style=primary_style,
+            secondary_style=secondary_style,
             style_commentary=style_commentary,
         )
         print("[start_round] planner done")
 
         planned_options = planner_result.get("options", [])
-        if not isinstance(planned_options, list) or len(planned_options) != 2:
-            raise ValueError("Stage 2 planner must return exactly 2 options")
+        if not isinstance(planned_options, list) or len(planned_options) != 4:
+            raise ValueError("Stage 2 planner must return exactly 4 options")
 
-        validate_ids(planned_options, {"B", "C"})
+        validate_ids(planned_options, {"B", "C", "E", "F"})
         print("[start_round] planner ids validated")
 
-        options = [build_direction_a_option(selected_style)]
+        option_a = build_direction_a_option(primary_style)
+        option_d = {**build_direction_a_option(secondary_style), "id": "D"}
+        options = [option_a]
         print("[start_round] direction A added")
 
-        options_to_generate = [normalize_stage_option(planned) for planned in planned_options]
+        options_to_generate = {opt["id"]: normalize_stage_option(opt) for opt in planned_options}
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [
-                executor.submit(_generate_option_image, opt, gemini_client, session_id, 1, build_stage2_image_prompt)
-                for opt in options_to_generate
-            ]
-            for future in futures:
-                options.append(future.result())
+        for oid in ("B", "C", "E", "F"):
+            options.append(_generate_option_image(options_to_generate[oid], gemini_client, session_id, 1, build_stage2_image_prompt))
+            doc_ref.set(
+                {"rounds": {str(round_number): {"options": sorted(options, key=lambda x: x.get("id", ""))}}},
+                merge=True,
+            )
+            print(f"[start_round] option {oid} written to firestore")
 
+        options.append(option_d)
         options = sorted(options, key=lambda x: x.get("id", ""))
         print("[start_round] round 1 options sorted")
 
@@ -498,11 +519,12 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
 
         option_b = build_refinement_option(selected_option, "B", "cool")
         option_c = build_refinement_option(selected_option, "C", "dark")
+        option_d = build_refinement_option(selected_option, "D", "warm")
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             futures = [
                 executor.submit(_generate_option_image, opt, gemini_client, session_id, 2, build_stage3_image_prompt, anchor_image_url)
-                for opt in [option_b, option_c]
+                for opt in [option_b, option_c, option_d]
             ]
             for future in futures:
                 options.append(future.result())
