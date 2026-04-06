@@ -1,7 +1,11 @@
+import io
 import mimetypes
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
+
+from PIL import Image, ImageDraw, ImageFont
 
 EMPTY_ROOM_PATH = "static/room/empty_room.png"
 
@@ -59,6 +63,35 @@ def load_image_part_from_reference(types_module, image_reference: str):
     return load_local_image_part(types_module, image_reference)
 
 
+def stamp_label_on_image(image_bytes: bytes, label: str) -> bytes:
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    draw = ImageDraw.Draw(img)
+
+    font = ImageFont.load_default(size=72)
+
+    bbox = font.getbbox(label)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    padding = 16
+    rect_x1 = 20
+    rect_y1 = 20
+    rect_x2 = rect_x1 + text_w + padding * 2
+    rect_y2 = rect_y1 + text_h + padding * 2
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rectangle([rect_x1, rect_y1, rect_x2, rect_y2], fill=(0, 0, 0, 180))
+    img = Image.alpha_composite(img, overlay)
+
+    draw = ImageDraw.Draw(img)
+    draw.text((rect_x1 + padding, rect_y1 + padding), label, font=font, fill=(255, 255, 255, 255))
+
+    out = io.BytesIO()
+    img.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
 def extract_image_bytes_from_response(response):
     candidates = getattr(response, "candidates", None) or []
 
@@ -84,6 +117,10 @@ def generate_image_with_gemini(
     prompt: str,
     style_image_path: str = None,
     direction_image_url: str = None,
+    screenshot_bytes: bytes = None,
+    reference_image_paths: list = None,
+    reference_image_labels: list = None,
+    reference_image_bytes: list = None,
 ):
     from google.genai import types
 
@@ -95,8 +132,27 @@ def generate_image_with_gemini(
     else:
         parts.append(load_local_image_part(types, EMPTY_ROOM_PATH))
 
+    if screenshot_bytes:
+        parts.append(types.Part.from_bytes(data=screenshot_bytes, mime_type="image/png"))
+        print(f"[image_generation] option={option_id} including round1 screenshot as image_1")
+
     if style_image_path:
         parts.append(load_image_part_from_reference(types, style_image_path))
+
+    if reference_image_bytes:
+        for i, ref_bytes in enumerate(reference_image_bytes):
+            parts.append(types.Part.from_bytes(data=ref_bytes, mime_type="image/png"))
+            print(f"[image_generation] option={option_id} appended pre-stamped reference image {i + 1}/{len(reference_image_bytes)}")
+    elif reference_image_paths:
+        for i, ref_path in enumerate(reference_image_paths):
+            with open(ref_path, "rb") as f:
+                ref_bytes = f.read()
+            if reference_image_labels and i < len(reference_image_labels):
+                label = reference_image_labels[i]
+                ref_bytes = stamp_label_on_image(ref_bytes, label)
+                print(f"[image_generation] option={option_id} stamped label '{label}' on reference image: {ref_path}")
+            parts.append(types.Part.from_bytes(data=ref_bytes, mime_type="image/png"))
+            print(f"[image_generation] option={option_id} appended reference image: {ref_path}")
 
     max_attempts = 4
     delay_seconds = 10
@@ -105,6 +161,7 @@ def generate_image_with_gemini(
 
     for attempt in range(max_attempts):
         try:
+            print(f"[image_generation] START option={option_id} timestamp={datetime.utcnow().isoformat()}")
             print(f"[image_generation] option={option_id} attempt={attempt + 1}/{max_attempts}")
             response = gemini_client.models.generate_content(
                 model="gemini-2.5-flash-image",

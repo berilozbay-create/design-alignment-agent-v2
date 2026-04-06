@@ -1,8 +1,11 @@
+import json
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from google.cloud import firestore
 
 from design_direction_planner import plan_stage2_directions
-from image_generation_service import generate_image_with_gemini
+from image_generation_service import generate_image_with_gemini, stamp_label_on_image
 
 
 STYLE_URL_MAP = {
@@ -153,7 +156,7 @@ DIRECTION_A_COPY = {
 }
 
 
-def build_stage2_image_prompt(option: dict) -> str:
+def build_stage2_image_prompt(option: dict, signals=None) -> str:
     return f"""
 You are generating a photorealistic premium interior design catalogue render.
 
@@ -204,27 +207,45 @@ Do not return text.
 """.strip()
 
 
-def build_stage3_image_prompt(option: dict) -> str:
+def build_stage3_image_prompt(option: dict, signals=None) -> str:
+    liked = (signals or {}).get("liked", [])
+    disliked = (signals or {}).get("disliked", [])
+    mood = (signals or {}).get("mood", "")
+
+    liked_text = "\n".join(f"- {item}" for item in liked) if liked else "- (nothing specified)"
+    disliked_text = ", ".join(disliked) if disliked else "nothing specified"
+    mood_text = mood if mood else "not specified"
+
     return f"""
-You are generating a refined photorealistic premium interior render.
+You are generating a photorealistic premium interior render.
 
-Use image_0 as the selected direction anchor.
+ROOM REFERENCE
+image_0 is the empty base room.
+- Preserve its exact architecture
+- Preserve its exact camera angle
+- Preserve its exact window placement
+- Preserve its exact daylight direction
+- Do not add or remove walls or structural elements
 
-ABSOLUTE CONSTRAINTS
-- Preserve the exact room shown in image_0
-- Preserve the exact camera and composition shown in image_0
-- Preserve the exact architecture shown in image_0
-- Preserve the exact window placement shown in image_0
-- Preserve the exact daylight direction shown in image_0
-- Preserve the same furniture layout shown in image_0
-- Preserve the same sofa shape and position shown in image_0
-- Preserve the same chairs, table, decor objects, and styling layout shown in image_0
-- Do not crop or reframe the scene
-- Do not redesign the room
-- Do not replace furniture pieces
-- Only refine materials, surface tonality, and finish choices
+CARD REFERENCES
+image_1 = Card A
+image_2 = Card B
+image_3 = Card C
+image_4 = Card D
+image_5 = Card E
+image_6 = Card F
+These are the 6 design options the user reviewed. Use them as visual references only — do not copy any card entirely.
 
-REFINEMENT DIRECTION
+USER PREFERENCES
+The user specifically liked these elements:
+{liked_text}
+The user disliked: {disliked_text}
+Overall mood: {mood_text}
+
+TASK
+The furniture, materials, plants, and all other elements the user specifically liked are NON-NEGOTIABLE — they must appear in every variation exactly as referenced. Only vary the unmentioned furniture pieces, materials, finishes, and plants between the three options. The three variations should feel like the same room in slightly different moods — not three different rooms.
+
+STYLE DIRECTION
 Style Name: {option.get("style_name", "")}
 Direction Summary: {option.get("direction_summary", "")}
 Color Story: {option.get("color_story", "")}
@@ -235,28 +256,12 @@ Furniture Finishes: {option.get("furniture_finishes", "")}
 Decor Density: {option.get("decor_density", "")}
 Botanical Species: {option.get("botanical_species", "")}
 Lighting Character: {option.get("lighting_character", "")}
-Commentary: {option.get("commentary", "")}
-
-MATERIAL EXPLORATION RULE
-Explore variation only through:
-- wood tone
-- textile tone
-- wall finish
-- flooring material
-- carpet tone and texture
-- surface warmth or coolness
-- lighting warmth
-
-Do not change the composition.
-Do not change the furniture inventory.
-Do not change the styling objects.
-The visual difference must come from materials and tonality only.
+Notes: {option.get("commentary", "")}
 
 QUALITY
 - Photorealistic
 - High-end editorial
 - Interior design catalogue quality
-- Premium materials
 - Avoid sterile AI look
 - Avoid plastic-looking finishes
 
@@ -416,10 +421,10 @@ def build_refinement_option(base_option: dict, new_id: str, mode: str) -> dict:
     return option
 
 
-def _generate_option_image(option, gemini_client, session_id, round_number, prompt_fn, direction_image_url=None):
+def _generate_option_image(option, gemini_client, session_id, round_number, prompt_fn, direction_image_url=None, screenshot_bytes=None, reference_image_paths=None, reference_image_labels=None, reference_image_bytes=None, signals=None):
     option_id = option["id"]
     print(f"[start_round] image generation start for {option_id}")
-    image_prompt = prompt_fn(option)
+    image_prompt = prompt_fn(option, signals)
     image_url = generate_image_with_gemini(
         gemini_client=gemini_client,
         session_id=session_id,
@@ -428,13 +433,167 @@ def _generate_option_image(option, gemini_client, session_id, round_number, prom
         prompt=image_prompt,
         style_image_path=None,
         direction_image_url=direction_image_url,
+        screenshot_bytes=screenshot_bytes,
+        reference_image_paths=reference_image_paths,
+        reference_image_labels=reference_image_labels,
+        reference_image_bytes=reference_image_bytes,
     )
     print(f"[start_round] image generation done for {option_id}: {image_url}")
     option["image_url"] = image_url
     return option
 
 
-def start_round(session_id: str, round_number: int, db, gemini_client):
+def plan_round2_directions_with_signals(
+    gemini_client,
+    signals: dict,
+    primary_style: str,
+    secondary_style: str,
+) -> list:
+    liked = signals.get("liked", [])
+    disliked = signals.get("disliked", [])
+    mood = signals.get("mood", "")
+    style_weight = signals.get("primary_style_weight", 5)
+
+    liked_text = "\n".join(f"  - {item}" for item in liked) if liked else "  (none specified)"
+    disliked_text = "\n".join(f"  - {item}" for item in disliked) if disliked else "  (none specified)"
+
+    style_weight_note = (
+        f"The user leaned strongly toward {primary_style} (weight {style_weight}/10)."
+        if style_weight >= 7
+        else f"The user leaned strongly toward {secondary_style} (weight {style_weight}/10)."
+        if style_weight <= 3
+        else f"The user showed a balanced interest in both {primary_style} and {secondary_style} (weight {style_weight}/10)."
+    )
+
+    prompt = f"""
+Role:
+You are a Senior Interior Design Director.
+
+Task:
+The user has reviewed 6 interior design options and given specific feedback.
+Generate exactly 3 new design directions (ids B, C, D) that respond directly to their feedback signals.
+
+Style Context:
+The user's selected styles were: {primary_style} (primary) and {secondary_style} (secondary).
+{style_weight_note}
+All three directions must stay within this aesthetic territory.
+
+What the user liked:
+{liked_text}
+
+What the user disliked:
+{disliked_text}
+
+Overall mood the user is drawn to:
+  {mood}
+
+Instructions:
+- 1: A design direction that honours what the user said they liked, staying close to their stated preferences.
+- 2: A design direction that addresses what the user said they disliked, while preserving the overall mood they responded to.
+- 3: A synthesis direction that combines the best of both — incorporating the liked elements, avoiding the disliked ones, and adding one new complementary idea.
+
+Each direction must feel like a genuine and specific response to the user's feedback.
+All three must be visually distinct from each other — different palette, material weight, or atmosphere.
+
+Return valid JSON only in this exact format:
+
+{{
+  "options": [
+    {{
+      "id": "1",
+      "style_name": "...",
+      "direction_summary": "...",
+      "color_story": "...",
+      "wall_material": "...",
+      "floor_material": "...",
+      "furniture_silhouette": "...",
+      "furniture_finishes": "...",
+      "decor_density": "...",
+      "botanical_species": "...",
+      "lighting_character": "...",
+      "commentary": "..."
+    }},
+    {{
+      "id": "2",
+      "style_name": "...",
+      "direction_summary": "...",
+      "color_story": "...",
+      "wall_material": "...",
+      "floor_material": "...",
+      "furniture_silhouette": "...",
+      "furniture_finishes": "...",
+      "decor_density": "...",
+      "botanical_species": "...",
+      "lighting_character": "...",
+      "commentary": "..."
+    }},
+    {{
+      "id": "3",
+      "style_name": "...",
+      "direction_summary": "...",
+      "color_story": "...",
+      "wall_material": "...",
+      "floor_material": "...",
+      "furniture_silhouette": "...",
+      "furniture_finishes": "...",
+      "decor_density": "...",
+      "botanical_species": "...",
+      "lighting_character": "...",
+      "commentary": "..."
+    }}
+  ]
+}}
+""".strip()
+
+    print(f"[round2_planner] signals received: {signals}")
+    print(f"[round2_planner] prompt: {prompt}")
+    response = gemini_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+
+    raw_text = getattr(response, "text", "") or ""
+    cleaned = re.sub(r"```json|```", "", raw_text).strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        raise ValueError(f"Round 2 signals planner did not return valid JSON. Raw:\n{cleaned}")
+
+    options = parsed.get("options", [])
+    if not isinstance(options, list) or len(options) != 3:
+        raise ValueError("Round 2 signals planner must return exactly 3 options")
+
+    expected_ids = {"1", "2", "3"}
+    seen = set()
+    normalized = []
+    for opt in options:
+        oid = str(opt.get("id", "")).strip()
+        if oid not in expected_ids:
+            raise ValueError(f"Unexpected option id from signals planner: {oid}")
+        if oid in seen:
+            raise ValueError(f"Duplicate option id from signals planner: {oid}")
+        seen.add(oid)
+        normalized.append({
+            "id": oid,
+            "style_name": str(opt.get("style_name", "")).strip(),
+            "direction_summary": str(opt.get("direction_summary", "")).strip(),
+            "color_story": str(opt.get("color_story", "")).strip(),
+            "wall_material": str(opt.get("wall_material", "")).strip(),
+            "floor_material": str(opt.get("floor_material", "")).strip(),
+            "furniture_silhouette": str(opt.get("furniture_silhouette", "")).strip(),
+            "furniture_finishes": str(opt.get("furniture_finishes", "")).strip(),
+            "decor_density": str(opt.get("decor_density", "")).strip(),
+            "botanical_species": str(opt.get("botanical_species", "")).strip(),
+            "lighting_character": str(opt.get("lighting_character", "")).strip(),
+            "commentary": str(opt.get("commentary", "")).strip(),
+            "title": str(opt.get("style_name", oid)).strip(),
+        })
+
+    return normalized
+
+
+def start_round(session_id: str, round_number: int, db, gemini_client, signals=None):
     print(f"[start_round] session_id={session_id} round_number={round_number}")
 
     doc_ref = db.collection("sessions").document(session_id)
@@ -486,50 +645,79 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
 
         options_to_generate = {opt["id"]: normalize_stage_option(opt) for opt in planned_options}
 
-        for oid in ("B", "C", "E", "F"):
+        for i, oid in enumerate(("B", "C", "E", "F")):
             options.append(_generate_option_image(options_to_generate[oid], gemini_client, session_id, 1, build_stage2_image_prompt))
             doc_ref.set(
                 {"rounds": {str(round_number): {"options": sorted(options, key=lambda x: x.get("id", ""))}}},
                 merge=True,
             )
             print(f"[start_round] option {oid} written to firestore")
+            if i < 3:
+                print(f"[start_round] waiting 25s before next generation")
+                time.sleep(25)
 
         options.append(option_d)
         options = sorted(options, key=lambda x: x.get("id", ""))
         print("[start_round] round 1 options sorted")
 
     elif round_number == 2:
+        print("[round2] starting generation")
+        print(f"[round2] signals: {signals}")
         print("[start_round] entering round 2 flow")
 
-        selected_option = session.get("last_selected_option")
-        last_selected_round = session.get("last_selected_round")
+        if not signals or not isinstance(signals, dict):
+            raise ValueError("Round 2 requires signals from user feedback")
 
-        if not selected_option or not isinstance(selected_option, dict):
-            raise ValueError("last_selected_option missing in session")
+        style_selected = session.get("style_selected", [])
+        primary_style = style_selected[0] if len(style_selected) > 0 else ""
+        secondary_style = style_selected[1] if len(style_selected) > 1 else primary_style
+        print(f"[start_round] round 2 styles: primary={primary_style} secondary={secondary_style}")
 
-        if last_selected_round != 1:
-            raise ValueError("Round 2 requires a selection from Round 1")
+        print("[start_round] using signals-based planner for round 2")
+        planned = plan_round2_directions_with_signals(
+            gemini_client,
+            signals=signals,
+            primary_style=primary_style,
+            secondary_style=secondary_style,
+        )
+        print(f"[start_round] signals planner returned {len(planned)} options")
 
-        anchor_image_url = selected_option.get("image_url")
-        if not anchor_image_url:
-            raise ValueError("Selected option image_url missing")
+        primary_style_path = STYLE_URL_MAP.get(primary_style, "").lstrip("/")
+        secondary_style_path = STYLE_URL_MAP.get(secondary_style, "").lstrip("/")
+        round1_reference_paths = [
+            primary_style_path,
+            f"static/generated/session_{session_id}/round1_B.png",
+            f"static/generated/session_{session_id}/round1_C.png",
+            secondary_style_path,
+            f"static/generated/session_{session_id}/round1_E.png",
+            f"static/generated/session_{session_id}/round1_F.png",
+        ]
+        round1_reference_labels = ["A", "B", "C", "D", "E", "F"]
+        print(f"[start_round] round1 reference paths: {round1_reference_paths}")
 
-        options = [build_refinement_anchor_option(selected_option)]
-        print("[start_round] refinement anchor A added")
+        round1_stamped_bytes = []
+        for path, label in zip(round1_reference_paths, round1_reference_labels):
+            with open(path, "rb") as f:
+                raw = f.read()
+            round1_stamped_bytes.append(stamp_label_on_image(raw, label))
+            print(f"[start_round] stamped label '{label}' on {path}")
 
-        option_b = build_refinement_option(selected_option, "B", "cool")
-        option_c = build_refinement_option(selected_option, "C", "dark")
-        option_d = build_refinement_option(selected_option, "D", "warm")
-
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                executor.submit(_generate_option_image, opt, gemini_client, session_id, 2, build_stage3_image_prompt, anchor_image_url)
-                for opt in [option_b, option_c, option_d]
-            ]
-            for future in futures:
-                options.append(future.result())
+        options = []
+        for i, opt in enumerate(planned):
+            options.append(_generate_option_image(opt, gemini_client, session_id, 2, build_stage3_image_prompt, reference_image_bytes=round1_stamped_bytes, signals=signals))
+            print(f"[start_round] round 2 option {opt.get('id')} done")
+            rounds["2"] = {"options": sorted(options, key=lambda x: x.get("id", ""))}
+            doc_ref.set(
+                {"current_round": 2, "rounds": rounds},
+                merge=True,
+            )
+            print(f"[start_round] round 2 option {opt.get('id')} written to firestore")
+            if i < len(planned) - 1:
+                print("[start_round] waiting 25s before next generation")
+                time.sleep(25)
 
         options = sorted(options, key=lambda x: x.get("id", ""))
+        rounds["2"] = {"options": options}
         print("[start_round] round 2 options sorted")
 
     else:
@@ -551,11 +739,14 @@ def start_round(session_id: str, round_number: int, db, gemini_client):
     )
     print("[start_round] firestore write complete")
 
+    print(f"[debug] rounds keys: {list(rounds.keys())}")
+    print(f"[debug] round_number type: {type(round_number)} value: {round_number}")
+    print(f"[debug] rounds[str(round_number)]: {rounds.get(str(round_number), 'KEY NOT FOUND')}")
     result = {
         "session_id": session_id,
         "phase": 3,
         "round": round_number,
-        "options": options,
+        "options": rounds[str(round_number)].get("options", []),
     }
     print("[start_round] returning success response")
     return result

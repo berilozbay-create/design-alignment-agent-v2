@@ -1,12 +1,12 @@
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 import os
 import uuid
 from google.cloud import firestore
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from google import genai
 from google.genai.types import HttpOptions
 
@@ -94,12 +94,10 @@ db = get_firestore_client()
 
 def get_genai_client():
     project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT") or "design-alignment-agent"
-    location = os.getenv("VERTEX_LOCATION") or "us-central1"
 
     return genai.Client(
         vertexai=True,
         project=project,
-        location=location,
         http_options=HttpOptions(api_version="v1"),
     )
 
@@ -133,6 +131,11 @@ class SelectStyleRequest(BaseModel):
 
 class RoundStartRequest(BaseModel):
     round: int
+    signals: Optional[dict] = None
+
+
+class FeedbackRequest(BaseModel):
+    comment: str
 
 
 def _validate_styles(styles: List[str]) -> List[str]:
@@ -209,7 +212,7 @@ def demo_page():
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Design Mediator</title>
+    <title>Design Alignment Agent</title>
     <style>
         :root {
             --bg: #f4f3ef;
@@ -510,6 +513,20 @@ def demo_page():
             50% { opacity: 0.4; }
         }
 
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 3px solid #d8d4ca;
+            border-top-color: #2a271f;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .card-body {
             padding: 14px;
         }
@@ -690,13 +707,88 @@ def demo_page():
                 grid-template-columns: 1fr;
             }
         }
+        .feedback-section {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-top: 18px;
+        }
+
+        .feedback-heading {
+            font-size: 22px;
+            font-weight: bold;
+            margin: 0 0 8px 0;
+        }
+
+        .feedback-subtext {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+
+        .feedback-textarea {
+            width: 100%;
+            min-height: 90px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-family: inherit;
+            background: var(--soft);
+            color: var(--text);
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+        .feedback-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .feedback-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            align-items: center;
+        }
+
+        .mic-button {
+            border: 1px solid var(--line);
+            background: var(--soft);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 18px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .mic-button.recording {
+            background: #ffe5e5;
+            border-color: #e05555;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .feedback-response {
+            margin-top: 16px;
+            background: var(--soft);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 16px;
+            white-space: pre-wrap;
+            font-size: 15px;
+            line-height: 1.55;
+        }
     </style>
 </head>
 <body>
     <div class="page">
         <section class="hero">
             <div class="eyebrow">Creative Storytelling Demo</div>
-            <h1>Design Mediator</h1>
+            <h1>Design Alignment Agent</h1>
             <div class="intro">
                 A conversational agent for early-stage interior design alignment.
                 Many clients struggle to describe what they want in words, while architects often receive vague
@@ -738,7 +830,7 @@ def demo_page():
             <div class="cap-label">Design Mediator demonstrates multimodal reasoning</div>
             <h2>Style Discovery</h2>
             <div class="stage-sub">
-                Select a design language. Each option shows the same room rendered in a different interior style.
+                Select your primary and secondary design styles. Each option shows the same room rendered in a different interior style.
             </div>
             <div class="same-room-note">Same room. Same lighting. Same camera. Focus only on style.</div>
 
@@ -746,31 +838,45 @@ def demo_page():
 
             <div class="transition-banner" id="styleTransition">
                 <div class="transition-title" id="styleTransitionTitle">Style selected</div>
-                <div class="transition-text" id="styleTransitionText">Design Mediator is now exploring directions within this style…</div>
+                <div class="transition-text" id="styleTransitionText">Design Alignment Agent is now exploring directions across both styles…</div>
             </div>
 
-            <div class="status-line" id="styleStatus">Choose one style to begin.</div>
+            <div class="status-line" id="styleStatus">Choose your primary style to begin.</div>
         </section>
 
         <section class="stage hidden" id="stage-2">
             <div class="cap-label">Design Mediator demonstrates design exploration</div>
             <h2>Direction Exploration</h2>
             <div class="stage-sub">
-                Explore three equal-weight directions within the selected style. Choose the direction that feels closest to your taste.
+                Explore six directions — pure styles, distinct variations, and blended interpretations across your two chosen styles.
             </div>
             <div class="same-room-note">Same room. Same lighting. Same camera. Focus only on style.</div>
 
             <div class="loader hidden" id="loader-stage-2">
-                <div class="loader-title">Design Mediator is preparing six direction cards across both styles…</div>
+                <div class="loader-title">Design Alignment Agent is preparing six direction cards across both styles…</div>
                 <div class="progress-row">
                     <div class="progress-seg" id="s2p1"></div>
                     <div class="progress-seg" id="s2p2"></div>
                     <div class="progress-seg" id="s2p3"></div>
+                    <div class="progress-seg" id="s2p4"></div>
+                    <div class="progress-seg" id="s2p5"></div>
+                    <div class="progress-seg" id="s2p6"></div>
                 </div>
                 <div class="small" id="loader-stage-2-text">Preparing design directions…</div>
             </div>
 
             <div class="card-grid" id="round1Grid"></div>
+
+            <div class="feedback-section" id="round1Feedback" style="display:none;">
+                <h3 class="feedback-heading">What caught your eye?</h3>
+                <div class="feedback-subtext">Tell us what you liked or didn’t like across the cards. For example: “I loved the walls from B and the plants from E, but the sofa from A felt too heavy.”</div>
+                <textarea class="feedback-textarea" id="round1FeedbackText" placeholder="Share your thoughts about the designs..."></textarea>
+                <div class="feedback-actions">
+                    <button class="mic-button" id="round1MicBtn" title="Voice input" onclick="toggleMic()">&#127908;</button>
+                    <button onclick="submitRound1Feedback()">Generate my refined options →</button>
+                </div>
+                <div class="feedback-response" id="round1FeedbackResponse" style="display:none;"></div>
+            </div>
 
             <div class="inline-banner" id="round1Transition">
                 <div class="inline-banner-title" id="round1TransitionTitle">Direction selected</div>
@@ -799,14 +905,11 @@ def demo_page():
             <div class="same-room-note">Same room. Same lighting. Same camera. Focus only on style.</div>
 
             <div class="loader hidden" id="loader-stage-3">
-                <div class="loader-title">Design Mediator is refining your preferred direction…</div>
-                <div class="progress-row">
-                    <div class="progress-seg" id="s3p1"></div>
-                    <div class="progress-seg" id="s3p2"></div>
-                    <div class="progress-seg" id="s3p3"></div>
-                    <div class="progress-seg" id="s3p4"></div>
+                <div class="loader-title">Design Alignment Agent is refining your preferred direction…</div>
+                <div style="display:flex;align-items:center;gap:10px;margin:10px 0;">
+                    <div class="spinner"></div>
+                    <div class="small" id="loader-stage-3-text">Generating refined variations… this takes about 2 minutes</div>
                 </div>
-                <div class="small" id="loader-stage-3-text">Preparing refined variations…</div>
             </div>
 
             <div class="card-grid" id="round2Grid"></div>
@@ -1099,26 +1202,6 @@ def demo_page():
             // Show stage-2 and placeholder grid immediately
             showStage("stage-2");
             setTracker(2);
-            (function() {
-                const _grid = document.getElementById("round1Grid");
-                _grid.innerHTML = "";
-                document.getElementById("loader-stage-2").classList.remove("hidden");
-                setProgress("s2p", 0, 6, "Kicking off generation…");
-                for (const _id of ["A", "B", "C", "D", "E", "F"]) {
-                    const _c = document.createElement("div");
-                    _c.className = "card";
-                    _c.id = `r1card-${_id}`;
-                    _c.innerHTML = `
-                        <div class="option-letter-badge">${_id}</div>
-                        <div class="card-media" style="animation:pulse 1.5s ease-in-out infinite;"></div>
-                        <div class="card-body">
-                            <div class="card-title">Option ${_id}</div>
-                            <div class="card-text">Designing…</div>
-                        </div>
-                    `;
-                    _grid.appendChild(_c);
-                }
-            })();
 
             try {
                 document.getElementById("styleStatus").textContent = "";
@@ -1200,7 +1283,7 @@ def demo_page():
                     <div class="card-media" style="animation:pulse 1.5s ease-in-out infinite;"></div>
                     <div class="card-body">
                         <div class="card-title">Option ${id}</div>
-                        <div class="card-text">Designing\u2026</div>
+                        <div class="card-text">Designing…</div>
                     </div>
                 `;
                 grid.appendChild(card);
@@ -1247,13 +1330,17 @@ def demo_page():
                 raw.textContent = JSON.stringify(round1Data, null, 2);
                 setProgress("s2p", 6, 6, "All directions ready.");
                 renderRoundGrid("round1Grid", round1Data, 1);
+                document.getElementById("round1Feedback").style.display = "block";
             } catch (err) {
                 grid.innerHTML = `<div class="brief-box">Error generating directions: ${safeText(err)}</div>`;
             } finally {
                 loader.classList.add("hidden");
             }
         }
-        async function generateRound2() {
+        async function generateRound2(signals) {
+            showStage("stage-3");
+            setTracker(3);
+
             const loader = document.getElementById("loader-stage-3");
             const grid = document.getElementById("round2Grid");
             const raw = document.getElementById("round2Raw");
@@ -1262,31 +1349,81 @@ def demo_page():
             raw.textContent = "";
             loader.classList.remove("hidden");
 
-            setProgress("s3p", 0, 4, "Preparing refined variations…");
-            await sleep(250);
+            fetch(`/session/${sessionId}/round/start`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ round: 2, signals: signals || null })
+            });
+
+            const ALL_IDS = ["1", "2", "3"];
+            for (const id of ALL_IDS) {
+                const card = document.createElement("div");
+                card.className = "card";
+                card.id = `r2card-${id}`;
+                card.innerHTML = `
+                    <div class="card-media" style="animation:pulse 1.5s ease-in-out infinite;"></div>
+                    <div class="card-body">
+                        <div class="card-title">Designing\u2026</div>
+                        <div class="card-text"></div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            }
+
+            function fillCard(id, option) {
+                const card = document.getElementById(`r2card-${id}`);
+                if (!card) return;
+                const imageUrl = extractImageUrl(option) || "";
+                const title = safeText(option.title || option.style_name, `Option ${id}`);
+                const desc = safeText(option.commentary || option.direction || option.description, "");
+                card.innerHTML = `
+                    <div class="card-media">
+                        <img src="${imageUrl}" alt="${title}" style="opacity:0;transition:opacity 0.6s;" onload="this.style.opacity=1">
+                    </div>
+                    <div class="card-body">
+                        <div class="card-title">${title}</div>
+                        <div class="card-text">${desc}</div>
+                    </div>
+                `;
+                card.style.opacity = "0";
+                card.style.transition = "opacity 0.4s ease";
+                requestAnimationFrame(() => requestAnimationFrame(() => { card.style.opacity = "1"; }));
+            }
 
             try {
-                setProgress("s3p", 1, 4, "Generating refinement 1 of 4…");
+                const filled = {};
+                let filledCount = 0;
 
-                const res = await fetch(`/session/${sessionId}/round/start`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ round: 2 })
+                await new Promise((resolve, reject) => {
+                    let pollCount = 0;
+                    let polling = false;
+                    const intervalId = setInterval(async () => {
+                        if (polling) return; polling = true;
+                        if (++pollCount > 75) { polling = false; clearInterval(intervalId); reject(new Error("Polling timed out")); return; }
+                        try {
+                            const res = await fetch(`/session/${sessionId}/round/poll?round=2`);
+                            const data = await res.json();
+                            if (data.error) { polling = false; return; }
+                            console.log('[round2 poll]', JSON.stringify(data));
+                            for (const option of (data.options || [])) {
+                                const oid = option.id;
+                                if (filled[oid] || !option.image_url) continue;
+                                filled[oid] = option;
+                                fillCard(oid, option);
+                                filledCount++;
+                            }
+                            if (data.complete) { clearInterval(intervalId); resolve(filled); }
+                        } catch (e) { /* keep polling */ } finally { polling = false; }
+                    }, 8000);
                 });
 
-                setProgress("s3p", 2, 4, "Generating refinement 2 of 4…");
-                await sleep(180);
-                setProgress("s3p", 3, 4, "Generating refinement 3 of 4…");
-                await sleep(180);
-                setProgress("s3p", 4, 4, "Generating refinement 4 of 4…");
-
-                const data = await res.json();
-                round2Data = data;
-                raw.textContent = JSON.stringify(data, null, 2);
-
-                renderRoundGrid("round2Grid", data, 2);
+                round2Data = { session_id: sessionId, phase: 3, round: 2, options: ALL_IDS.map(id => filled[id]).filter(Boolean) };
+                raw.textContent = JSON.stringify(round2Data, null, 2);
+                round2Locked = false;
+                renderRoundGrid("round2Grid", round2Data, 2);
             } catch (err) {
-                grid.innerHTML = `<div class="brief-box">Error generating Stage 3 refinements: ${safeText(err)}</div>`;
+                console.error('[generateRound2] caught error:', err);
+                grid.innerHTML = `<div class="brief-box">Error generating refined options: ${safeText(err)}</div>`;
             } finally {
                 loader.classList.add("hidden");
             }
@@ -1319,7 +1456,7 @@ def demo_page():
                 if (locked && selectedId !== optionId) className += " dimmed";
                 card.className = className;
 
-                if (!locked) {
+                if (!locked && roundNumber !== 1) {
                     card.onclick = () => handleOptionClick(roundNumber, optionId, title);
                 }
 
@@ -1332,7 +1469,7 @@ def demo_page():
                     : "";
 
                 card.innerHTML = `
-                    <div class="option-letter-badge">${optionId}</div>
+                    ${roundNumber === 1 ? `<div class="option-letter-badge">${optionId}</div>` : ''}
                     ${badgeHtml}
                     <div class="card-media">${mediaHtml}</div>
                     <div class="card-body">
@@ -1496,10 +1633,8 @@ def demo_page():
 
                 briefBox.innerHTML = renderFormattedBrief(data);
 
-                finalHeroUrl =
-                    extractImageUrl(data) ||
-                    extractImageUrl(round2Data) ||
-                    extractImageUrl(round1Data);
+                const selectedRound2Option = round2Data?.options?.find(o => o.id === selectedRound2Id);
+                finalHeroUrl = selectedRound2Option?.image_url || round2Data?.options?.[0]?.image_url;
 
                 if (finalHeroUrl) {
                     heroBox.innerHTML = `<img src="${finalHeroUrl}" alt="Final hero render">`;
@@ -1516,6 +1651,103 @@ def demo_page():
                 heroBox.innerHTML = "Final hero image unavailable.";
             } finally {
                 loader.classList.add("hidden");
+            }
+        }
+
+        // Voice input (Web Speech API)
+        (function() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const micBtn = document.getElementById('round1MicBtn');
+            if (!SpeechRecognition) {
+                if (micBtn) micBtn.style.display = 'none';
+                return;
+            }
+            let recognition = null;
+            let isRecording = false;
+            window.toggleMic = function() {
+                if (isRecording) {
+                    recognition.stop();
+                    return;
+                }
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+                recognition.onstart = () => {
+                    isRecording = true;
+                    micBtn.classList.add('recording');
+                };
+                recognition.onend = () => {
+                    isRecording = false;
+                    micBtn.classList.remove('recording');
+                };
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    const ta = document.getElementById('round1FeedbackText');
+                    ta.value = (ta.value ? ta.value + ' ' : '') + transcript;
+                };
+                recognition.onerror = () => {
+                    isRecording = false;
+                    micBtn.classList.remove('recording');
+                };
+                recognition.start();
+            };
+        })();
+
+        async function submitRound1Feedback() {
+            const textarea = document.getElementById('round1FeedbackText');
+            const responseArea = document.getElementById('round1FeedbackResponse');
+            const submitBtn = document.querySelector('#round1Feedback button:last-of-type');
+
+            const comment = (textarea.value || '').trim();
+            if (!comment) {
+                responseArea.style.display = 'block';
+                responseArea.textContent = 'Please share your thoughts before continuing.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Reading your feedback…';
+            responseArea.style.display = 'none';
+
+            try {
+                const res = await fetch(`/session/${sessionId}/round/feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comment })
+                });
+                const data = await res.json();
+                console.log('[feedback] data:', JSON.stringify(data));
+
+                if (data.error) {
+                    responseArea.style.display = 'block';
+                    responseArea.textContent = 'Something went wrong. Please try again.';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Generate my refined options →';
+                    return;
+                }
+
+                if (!data.understood) {
+                    responseArea.style.display = 'block';
+                    responseArea.textContent = data.reply || 'Could you tell us more about what you liked or disliked?';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Generate my refined options →';
+                    return;
+                }
+
+                responseArea.style.display = 'block';
+                responseArea.textContent = 'Got it. Generating your refined options based on your feedback…';
+                submitBtn.disabled = true;
+
+                await sleep(1500);
+                console.log('[round2] signals being passed:', JSON.stringify(data.signals));
+                await generateRound2(data.signals);
+
+            } catch (err) {
+                responseArea.style.display = 'block';
+                responseArea.textContent = 'Error: ' + err;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Generate my refined options →';
             }
         }
 
@@ -1540,7 +1772,7 @@ def gemini_test():
         return {
             "ok": True,
             "project": os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT") or "design-alignment-agent",
-            "location": os.getenv("VERTEX_LOCATION") or "us-central1",
+            "location": "global",
             "response": text,
         }
 
@@ -1644,7 +1876,8 @@ def round_start(session_id: str, payload: RoundStartRequest):
             session_id=session_id,
             round_number=payload.round,
             db=db,
-            gemini_client=client
+            gemini_client=client,
+            signals=payload.signals,
         )
 
         return result
@@ -1661,7 +1894,7 @@ def round_start(session_id: str, payload: RoundStartRequest):
 
 
 @app.get("/session/{session_id}/round/poll")
-def round_poll(session_id: str):
+def round_poll(session_id: str, round: int = None):
     try:
         doc_ref = db.collection("sessions").document(session_id)
         snap = doc_ref.get()
@@ -1670,17 +1903,27 @@ def round_poll(session_id: str):
             return {"error": "Session not found"}
 
         session = snap.to_dict() or {}
-        current_round = session.get("current_round", 1)
         rounds = session.get("rounds", {})
-        round_data = rounds.get(str(current_round), {})
-        options = round_data.get("options", [])
-        complete = len(options) >= 6 and all(
-            any(o.get("id") == oid for o in options)
-            for oid in ("A", "B", "C", "D", "E", "F")
-        )
+
+        if round == 2:
+            target_round = 2
+            round_data = rounds.get("2", {})
+            options = round_data.get("options", [])
+            complete = len(options) >= 3 and all(
+                any(o.get("id") == oid for o in options)
+                for oid in ("1", "2", "3")
+            )
+        else:
+            target_round = session.get("current_round", 1)
+            round_data = rounds.get(str(target_round), {})
+            options = round_data.get("options", [])
+            complete = len(options) >= 6 and all(
+                any(o.get("id") == oid for o in options)
+                for oid in ("A", "B", "C", "D", "E", "F")
+            )
 
         return {
-            "round": current_round,
+            "round": target_round,
             "options": options,
             "complete": complete,
         }
@@ -1726,6 +1969,95 @@ def round_select(session_id: str, payload: dict):
             "error": "round_select_failed",
             "error_type": type(e).__name__,
             "detail": str(e)
+        }
+
+
+@app.post("/session/{session_id}/round/feedback")
+def round_feedback(session_id: str, payload: FeedbackRequest):
+    import json as _json
+    import re as _re
+    from google.genai import types as _gtypes
+
+    try:
+        doc_ref = db.collection("sessions").document(session_id)
+        snap = doc_ref.get()
+        if not snap.exists:
+            return {"error": "session_not_found"}
+
+        session = snap.to_dict() or {}
+        style_selected = session.get("style_selected", [])
+        rounds = session.get("rounds", {})
+        round1_options = (rounds.get("1") or rounds.get(1) or {}).get("options", [])
+
+        system_prompt = (
+            "You are a design alignment assistant. "
+            "The user has just seen 6 interior design options labeled A through F. "
+            "A and D are pure style references. B and E are distinct variations. "
+            "C and F are style blends. "
+            "The user will share what they liked or disliked about the designs. "
+            "Your job is to extract specific design signals from their comment and the screenshot. "
+            "If the comment contains clear design references, respond with a JSON object with "
+            "two fields: understood (true) and signals. "
+            "signals must be a JSON object with exactly these four fields: "
+            "liked (a list of strings, each describing a specific element and which card it came from, "
+            "e.g. warm oak walls from B, sculptural plants from E), "
+            "disliked (a list of strings, each describing what to avoid, "
+            "e.g. busy carpet from A, dark ceiling from D), "
+            "mood (a single sentence describing the overall atmosphere the user is drawn to), "
+            "primary_style_weight (a number from 0 to 10 indicating how much the user leaned "
+            "toward the primary style — 0 means fully secondary, 10 means fully primary). "
+            "If the comment is irrelevant or too vague to extract design signals, respond with "
+            "understood (false) and reply (a friendly one-sentence redirect asking them to "
+            "describe what they liked or disliked about the cards). "
+            "Always respond in the same language the user wrote in. "
+            "Return valid JSON only — no markdown, no explanation outside the JSON."
+        )
+
+        style_context = ""
+        if style_selected:
+            style_context = f"The user selected these styles: {', '.join(style_selected)}. "
+        option_ids = [o.get("id", "") for o in round1_options if o.get("id")]
+        if option_ids:
+            style_context += f"Options shown: {', '.join(option_ids)}."
+
+        user_message = f"{style_context}\n\nUser comment: {payload.comment}"
+
+        client = get_genai_client()
+
+        text_part = _gtypes.Part.from_text(text=user_message)
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                _gtypes.Content(
+                    role="user",
+                    parts=[text_part],
+                )
+            ],
+            config=_gtypes.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+        )
+
+        raw_text = (getattr(response, "text", "") or "").strip()
+        cleaned = _re.sub(r"```json|```", "", raw_text).strip()
+
+        try:
+            parsed = _json.loads(cleaned)
+        except Exception:
+            return {
+                "understood": False,
+                "reply": "I had trouble reading your feedback. Could you describe what you liked or disliked about specific cards?",
+                "raw": raw_text,
+            }
+
+        return parsed
+
+    except Exception as e:
+        return {
+            "error": "feedback_failed",
+            "error_type": type(e).__name__,
+            "detail": str(e),
         }
 
 
