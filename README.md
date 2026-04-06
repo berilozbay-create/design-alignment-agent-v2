@@ -1,261 +1,165 @@
-🔗 **[Live Demo](https://design-alignment-agent-71566893016.us-central1.run.app/demo)**  
-💚 **[Health Endpoint](https://design-alignment-agent-71566893016.us-central1.run.app/health)**
+Design Alignment Agent v2
+Explore → Blend → Describe → Converge
+Most people cannot describe their design taste — but they can recognise it when they see it. And they can tell you exactly what they liked.
+Design Alignment Agent v2 is a stateful multimodal AI system that helps users discover and articulate aesthetic preferences through structured visual dialogue and natural language feedback. Users pick two styles, explore six generated rooms that blend those styles in different proportions, describe what they liked in their own words, and receive a refined proposal that directly incorporates their stated preferences.
+Built as a fork of the original Gemini Live Agent Challenge submission. V2 is an active development branch pushing the interaction model further.
+
+What Changed from V1
+V1 was a fixed click-based flow: pick one style, see three cards, click one, see three material refinements, click one, receive a brief.
+V2 changes the interaction model fundamentally:
+Dual style selection. Users pick a primary and secondary style. The system generates a structured 6-card layout that spans pure styles, distinct variations, and blended interpretations — giving users a much richer design space to react to.
+Progressive card loading. Cards appear one by one as they generate rather than all at once. The experience feels alive throughout the ~2 minute generation process.
+Natural language feedback. After seeing 6 cards, users describe what they liked and disliked in their own words — "I liked the furniture from B but it was too dark, I want it lighter like F, and I loved the plant from D." Any language is supported. Voice input is transcribed to text for editing before submission.
+Signal-driven Round 2. Round 2 no longer generates mechanical material variations. Gemini reads the user's comment, extracts structured design signals (liked elements, disliked elements, overall mood), and uses those signals alongside all 6 labeled reference card images to generate refined proposals that directly incorporate what the user asked for.
+Correct final hero image. The final proposal image now correctly reflects the user's Round 2 selection.
+
+How It Works
+The experience follows a structured arc:
+
+Dual style selection — user picks a primary and secondary style from 10 curated options. The same living room is shown for each style so only the aesthetic language changes.
+Style commentary — Gemini interprets both style choices into design language: vibe, key rules, exploration guidance.
+Six-card exploration — the agent generates 6 living room cards appearing one by one:
+
+A — pure primary style (static reference, appears at 5s)
+B — primary style, distinct variation (generated)
+C — primary-led blend: 70% primary, 30% secondary influence (generated)
+D — pure secondary style (static reference, appears at 30s)
+E — secondary style, distinct variation (generated)
+F — secondary-led blend: 70% secondary, 30% primary influence (generated)
 
 
-# Design Alignment Agent
+Natural language feedback — a text box with voice input appears after all 6 cards load. User describes what they liked or disliked across the cards by letter. Gemini reads the comment, extracts design signals, and confirms what it understood.
+Signal-driven refinement — Round 2 generates 3 refined proposals using the extracted signals and all 6 labeled reference images. Gemini can visually identify liked elements in the reference cards and incorporate them into the new room.
+Final brief — Gemini synthesises the full interaction history into a structured design brief: title, summary, 5 design rules, and axis scores.
 
-**Explore → Compare → Refine → Converge**
 
-*Most people cannot describe their design taste — but they can recognise it when they see it.*
+Why This Is an Agent
+Design Alignment Agent v2 is not a generation tool. It is a stateful multimodal AI agent that mediates a creative alignment process.
+The system maintains persistent session state across rounds, interprets visual reactions and natural language as preference signals, plans generation steps before rendering images, uses labeled visual references to ground Round 2 in what the user actually saw, and synthesises a final brief from the full interaction history.
+The interaction model reflects how creative alignment actually works — not through forms or prompts, but through reaction, description, and iteration.
 
-Design Alignment Agent is a stateful multimodal AI agent that helps users discover and articulate aesthetic preferences through structured visual interaction. Instead of asking users to describe what they want, the agent presents a sequence of AI-generated living rooms and observes how they react. Each selection updates the session state, progressively narrowing the design space until a clear aesthetic direction emerges.
-
-Built for the **Gemini Live Agent Challenge**, this project explores how AI agents can guide creative decision-making through iterative visual dialogue. Creative storytelling here emerges through the evolution of visual preferences: the user's journey from uncertainty to a clearly defined aesthetic direction becomes the narrative the agent helps construct.
-
-Although the current MVP focuses on interior living rooms, the underlying interaction model applies to any creative domain where **visual preference needs to be clarified before design execution begins** — branding, poster design, product aesthetics, marketing visuals.
-
----
-
-## The Problem
-
-Creative work often begins with unclear requirements. Clients rarely start with a precise specification — preferences emerge reactively, recognised only after seeing examples. Design labels like *Japandi* or *Hollywood Regency* are meaningful to designers but abstract to everyone else.
-
-This leads to vague briefs, repeated revision cycles, and misalignment between designer and client. Mood boards collect references but don't guide users toward decisions.
-
-Design Alignment Agent approaches the problem differently. Instead of requiring users to describe their taste in words, it translates **visual reactions into structured preferences**.
-
-Users react to visual options. The agent interprets those reactions. Each round reduces the design space.
-
----
-
-## How It Works
-
-The experience follows a structured 4-phase arc:
-
-1. **Style selection** — user picks one of 10 curated interior styles; all shown using the same living room so only the aesthetic language changes
-2. **Style commentary** — Gemini interprets the choice into design language: overall vibe, key rules, common pitfalls, and exploration guidance
-3. **Two rounds of visual comparison** — the agent presents 3 living room variations per round; the user picks one; each round narrows the direction
-4. **Final brief** — Gemini synthesises the full interaction history into a structured design brief with title, summary, 5 design rules, and axis scores
-
-The user never fills out a form. They just react to images.
-
----
-
-## Why This Is an Agent
-
-Design Alignment Agent is not a generation tool. It is a stateful multimodal AI agent that guides a decision process.
-
-The system maintains a persistent session state across rounds, interprets user selections as preference signals, plans the next generation step before rendering images, and synthesises a final brief from the full interaction history. Rather than producing isolated outputs, the agent **aligns aesthetic intent through interaction**.
-
-This also makes it a creative storytelling agent. Each interaction step becomes part of a narrative: the user explores options, reacts to them, and the agent interprets those reactions to guide the next stage. The final design brief is the conclusion — a record of how aesthetic preferences evolved from uncertainty to clarity.
-
----
-
-## Beyond Prompt-Based Generation
-
-Most generative design tools follow the same loop: describe what you want → model generates an image → repeat.
-
-Design Alignment Agent follows a different paradigm. Instead of asking users to describe preferences, it observes how they react to visual alternatives. Each selection becomes a signal that updates the agent's understanding of the user's taste. The images serve as **decision instruments**, not final outputs.
-
----
-
-## Architecture
-
-![Architecture Diagram](design_mediator_arch_flow_01.png)
-
-```
+Architecture
 Browser
   │
   ▼
 FastAPI (Google Cloud Run)
-  ├── /session/start               → creates Firestore session
-  ├── /session/{id}/select-style   → Gemini Flash generates style commentary
-  ├── /session/{id}/round/start    → direction planner + sequential Imagen 3 calls
-  ├── /session/{id}/round/select   → saves selection, advances phase
-  └── /session/{id}/final-brief    → Gemini Flash synthesises design brief
+  ├── /session/start                    → creates Firestore session
+  ├── /session/{id}/select-style        → Gemini Flash generates style commentary
+  ├── /session/{id}/round/start         → direction planner + sequential image generation
+  ├── /session/{id}/round/poll          → returns options ready so far (progressive loading)
+  ├── /session/{id}/round/feedback      → Gemini reads comment + extracts signals
+  └── /session/{id}/final-brief         → Gemini synthesises design brief
 
-Google Cloud Firestore             → stateful session storage
-Gemini 2.5 Flash                   → text generation (planning, commentary, brief)
-Gemini Imagen 3                    → photorealistic room rendering
-```
+Google Cloud Firestore                  → stateful session storage
+Gemini 2.5 Flash                        → text generation (planning, commentary, signals, brief)
+gemini-2.5-flash-image                  → photorealistic room rendering
+Pillow                                  → stamping A-F labels on reference images
+Gemini calls per session:
+CallModelPurposeStyle commentaryGemini 2.5 FlashInterprets both style picksRound 1 direction plannerGemini 2.5 FlashPlans B, C, E, F specsRound 1 image Bgemini-2.5-flash-imageRenders primary variationRound 1 image Cgemini-2.5-flash-imageRenders primary-led blendRound 1 image Egemini-2.5-flash-imageRenders secondary variationRound 1 image Fgemini-2.5-flash-imageRenders secondary-led blendFeedback analysisGemini 2.5 FlashExtracts signals from commentRound 2 direction plannerGemini 2.5 FlashPlans 3 signal-driven directionsRound 2 images 1, 2, 3gemini-2.5-flash-imageRenders refined proposals with reference imagesFinal briefGemini 2.5 FlashSynthesises journey into structured brief
+All image generations run sequentially with 25-second cooldowns to stay within API rate limits.
 
-**Gemini is called 7 times per session:**
+Tech Stack
 
-| Call | Model | Purpose | Cost |
-|------|-------|---------|------|
-| Style commentary | Gemini 2.5 Flash | Interprets style pick into design language | Low |
-| Direction planner | Gemini 2.5 Flash | Generates B + C specs (11 fields each) | Low |
-| Round 1 image B | Gemini Imagen 3 | Renders option B | High |
-| Round 1 image C | Gemini Imagen 3 | Renders option C | High |
-| Round 2 image B | Gemini Imagen 3 | Renders cool refinement | High |
-| Round 2 image C | Gemini Imagen 3 | Renders dark refinement | High |
-| Final brief | Gemini 2.5 Flash | Synthesises journey into structured brief | Low |
+Backend — FastAPI, Python 3.11
+AI — Google GenAI SDK, Gemini 2.5 Flash, gemini-2.5-flash-image
+Image processing — Pillow (label stamping on reference images)
+Database — Google Cloud Firestore
+Deployment — Google Cloud Run (containerised via Docker)
 
-Image generations run sequentially — B completes before C starts. All cost is in the 4 Imagen calls.
 
----
-
-## Tech Stack
-
-- **Backend** — FastAPI, Python 3.11
-- **AI** — Google GenAI SDK (`google-genai==1.65.0`), Gemini 2.5 Flash, Gemini Imagen 3
-- **Database** — Google Cloud Firestore
-- **Deployment** — Google Cloud Run (containerised via Docker)
-
----
-
-## Project Structure
-
-```
+Project Structure
 ├── main.py                       # FastAPI routes, session logic, demo UI
-├── round_service.py              # Round orchestration, option building
+├── round_service.py              # Round orchestration, option building, prompts
 ├── selection_service.py          # Selection handling, phase advancement
 ├── design_direction_planner.py   # Gemini planning calls, direction specs
-├── image_generation_service.py   # Imagen 3 calls, retry logic, file saving
+├── image_generation_service.py   # Image generation, label stamping, retry logic
 ├── final_brief_service.py        # Brief generation, JSON parsing
-├── prompt_builders.py            # Prompt construction for image generation
+├── prompt_builders.py            # Prompt construction utilities
 ├── static/
 │   ├── room/empty_room.png       # Base living room anchor for all generations
 │   └── styles/                   # 10 style reference thumbnails
 ├── Dockerfile
 ├── requirements.txt
 └── .env.example
-```
 
----
+Running Locally
+Prerequisites
 
-## Running Locally
+Python 3.11+
+A Google Cloud project with Vertex AI and Firestore enabled
+Application Default Credentials configured (gcloud auth application-default login)
 
-**Prerequisites**
-- Python 3.11+
-- A Google Cloud project with Vertex AI and Firestore enabled
-- Application Default Credentials configured (`gcloud auth application-default login`)
-
-**Setup**
-
-```bash
-git clone https://github.com/berilozbay-create/design-alignment-agent
-cd design-alignment-agent
+Setup
+bashgit clone https://github.com/berilozbay-create/design-alignment-agent-v2
+cd design-alignment-agent-v2/backend
 
 pip install -r requirements.txt
-
-cp .env.example .env
-# Edit .env with your project values
-```
-
-**Environment variables**
-
-```
+Environment variables
 GOOGLE_CLOUD_PROJECT=your-project-id
-VERTEX_LOCATION=us-central1
 FIRESTORE_COLLECTION=sessions
-```
+Run
+bashuvicorn main:app --reload --port 8080
+Open http://localhost:8080/demo to try the full experience.
 
-**Run**
+Deploying to Cloud Run
+bashcd backend
 
-```bash
-uvicorn main:app --reload --port 8080
-```
+gcloud builds submit --tag gcr.io/$PROJECT_ID/design-alignment-agent-v2
 
-Open `http://localhost:8080/demo` to try the full experience.
-
-To verify your Gemini connection:
-
-```
-GET http://localhost:8080/gemini-test
-```
-
----
-
-## Deploying to Cloud Run
-
-```bash
-gcloud builds submit --tag gcr.io/$PROJECT_ID/design-alignment-agent
-
-gcloud run deploy design-alignment-agent \
-  --image gcr.io/$PROJECT_ID/design-alignment-agent \
+gcloud run deploy design-alignment-agent-v2 \
+  --image gcr.io/$PROJECT_ID/design-alignment-agent-v2 \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID,VERTEX_LOCATION=us-central1
-```
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID
+Note on images: Cloud Run containers have ephemeral file systems. Generated images are saved to disk within the container and are accessible for the duration of a session. Images do not persist across container restarts. For persistent storage, migrate image saving to Google Cloud Storage.
 
----
-
-## Session State
-
+Session State
 Each session is a Firestore document tracking the full journey:
-
-```json
-{
+json{
   "phase": 4,
-  "style_selected": ["Japandi"],
+  "style_selected": ["Japandi", "Coastal"],
   "style_commentary": { "raw_text": "..." },
   "rounds": {
-    "1": { "options": [...], "selected": "B" },
-    "2": { "options": [...], "selected": "A" }
+    "1": { "options": [...] },
+    "2": { "options": [...], "selected": "2" }
   },
-  "selected_path": ["B", "A"],
-  "last_selected_option": { "image_url": "...", "style_name": "...", "..." : "..." },
+  "last_selected_option": { "image_url": "...", "style_name": "..." },
+  "signals": {
+    "liked": ["sofa from Card B", "plant from Card D"],
+    "disliked": ["dark palette from Card B"],
+    "mood": "warm and airy with natural elements",
+    "primary_style_weight": 7
+  },
   "final_brief": {
-    "final_title": "Calm Material Edit",
+    "final_title": "...",
     "final_summary": "...",
     "key_design_rules": ["...", "...", "...", "...", "..."],
-    "axis_summary": {
-      "minimalism": "high",
-      "warmth": "medium",
-      "texture": "medium-high",
-      "contrast": "low",
-      "craft": "medium"
-    }
+    "axis_summary": { "minimalism": "medium", "warmth": "high" }
   },
   "history": [...]
 }
-```
 
-The selected image URL stored in session enables Round 2 to use Round 1's output as its spatial anchor — same room, different material direction.
+Design Decisions
+Fixed spatial canvas. Every generation uses the same living room: same camera angle, same windows, same natural light. Users evaluate style and material differences — not architectural ones.
+Planning before rendering. Gemini Flash plans structured direction specs (11 fields) before any image is generated. This keeps reasoning and rendering separate, improves quality, and controls cost.
+Static A and D. Cards A and D are handcrafted reference images for each style, not AI-generated. This gives users a reliable baseline and ensures two cards are always coherent regardless of generation quality.
+Labeled reference images. Before sending Round 1 cards to Gemini for Round 2 generation, each image is stamped with its letter (A-F) using Pillow. Gemini can visually identify which card the user referenced and extract the specific elements they liked.
+Sequential generation with cooldowns. Images generate one at a time with 25-second gaps. This prevents API rate limit errors (429s) that occur when multiple simultaneous image requests hit the shared capacity pool.
+Polling architecture. The frontend fires the round/start call in the background and polls every 8 seconds for new options. Cards appear as they arrive rather than all at once, making the wait feel active rather than frozen.
+Natural language over clicks. Round 2 is driven by what the user says, not which card they click. This produces richer preference signals and a more natural interaction — users can reference multiple cards, express nuance, and describe what they want in their own words.
 
----
+Known Limitations
 
-## Design Decisions
+Generated images do not persist across Cloud Run container restarts (no Cloud Storage integration yet)
+Voice input uses the browser's Web Speech API which has variable accuracy across browsers and languages
+Image generation rate limits (429 errors) can occur during heavy testing — the 25-second cooldown reduces but does not eliminate this risk
+Round 2 image quality depends on Gemini's ability to visually identify specific elements in the labeled reference images, which is not always precise
 
-**Fixed spatial canvas.** Every generation uses the same living room: same camera angle, same floor-to-ceiling windows, same natural light. This means users evaluate stylistic differences — not architectural ones. The options remain directly comparable across all rounds.
 
-**Planning before rendering.** Design reasoning is separated from image generation. Gemini Flash first produces structured direction specs (palette, materials, furniture character, lighting) across 11 fields. Imagen 3 then renders those specs. This makes the system behave like a design reasoning agent, not a raw generator — and keeps quality high while controlling cost.
+Relationship to V1
+This repo is a fork of the original hackathon submission at github.com/berilozbay-create/design-alignment-agent. V1 is frozen and not modified. All active development happens here.
 
-**Hardcoded Option A.** Option A in Round 1 is a handcrafted reference for each style, not AI-generated. This gives users a known-good baseline and ensures one card is always coherent regardless of generation quality.
-
-**One style, not many.** A single style keeps the convergence arc clean. The direction planner generates two meaningful variations within one style family — blending styles would dilute the signal.
-
-**Visual comparison over text input.** Each round presents exactly 3 options. Users respond to images rather than writing descriptions. This mirrors how people naturally evaluate design — through direct comparison.
-
----
-
-## Built For
-
-[Gemini Live Agent Challenge](https://googledevai.devpost.com/) — a hackathon focused on multimodal, interactive AI agent experiences.
-
-The theme: **storytelling through preference evolution.** The user's journey from aesthetic uncertainty to a clearly articulated design direction, guided by an AI agent that observes, interprets, and converges.
-
----
-
-## Original Vision & Future Direction
-
-The MVP delivers a fixed 2-round click-based flow. This was a deliberate scope decision for the hackathon — but the original vision was more ambitious.
-
-The intended experience was **conversational and open-ended**: users would move through as many rounds as needed, guided by natural language or voice, until they felt genuinely aligned. Rather than clicking thumbnails, users would describe reactions in their own words:
-
-> "I like the sofa from A, the lighting from B, and I want the floor warmer."
-
-The agent would interpret those references, update the session state, and generate the next iteration accordingly.
-
-What exists today is the convergence loop and stateful memory that makes this possible. The interaction layer — voice, typed commentary, compositional feedback across cards — is the next layer to build.
-
-**Planned extensions:**
-- additional refinement rounds until the user is satisfied, not a fixed 2-round limit
-- spoken or typed commentary between rounds as preference signals
-- compositional selection across multiple cards ("take the sofa from A, the palette from C")
-- richer session state modeling that tracks why decisions were made, not just what was selected
-- expansion beyond living rooms into other creative domains
-
-The core idea remains the same: AI agents can help people understand their own aesthetic preferences through guided visual exploration — and that process becomes more powerful the more natural the conversation.
+Built For
+Gemini Live Agent Challenge — a hackathon focused on multimodal, interactive AI agent experiences.
+The theme: storytelling through preference evolution. The user's journey from aesthetic uncertainty to a clearly articulated design direction, guided by an AI agent that observes, interprets, and converges.
